@@ -1,48 +1,26 @@
 # Config Module
 
-A type-safe configuration module that wraps NestJS `@nestjs/config` with Joi validation. Environment variables are validated at application startup, ensuring the app fails fast if required config is missing or invalid.
+Type-safe configuration over `@nestjs/config`. `validate()` in `config.validation.ts` is the **only** way config enters the app. It runs the Joi schema, then the cross-field rules, and fails fast at startup.
 
 ## Usage
 
-Inject `ConfigService` into any provider:
-
 ```typescript
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from './config/config.service';
+constructor(private readonly config: ConfigService) {}
 
-@Injectable()
-export class MyService {
-  constructor(private readonly config: ConfigService) {}
-
-  someMethod() {
-    const port = this.config.get('PORT');      // Type-safe, autocomplete works
-    const env = this.config.get('NODE_ENV');   // Returns 'development' | 'production'
-  }
-}
+this.config.get('PORT');          // number
+this.config.get('CORS_ORIGINS');  // string[]
 ```
 
-## Adding New Options
+## Rules
 
-1. **Define the type** in `config.types.ts`:
+- **Secrets** (`SECRET_KEY_NAMES` and every key in `USER_LIST_CURSOR_HMAC_KEYS`) are base64url and decode to at least 32 bytes. A key made of one repeated byte is rejected. **All secrets must be different**, which `assertDistinctKeys()` checks by decoded bytes. Generate them with `npm run keys:generate`; the app never generates keys itself.
+- **Durations** use the `duration(min, max)` helper. A value without a unit is rejected (`ms('15')` would mean 15 ms).
+- **Production** requires `COOKIE_SECURE=true` and an https `PUBLIC_API_BASE_URL`.
+- Error messages name variables, never values.
 
-```typescript
-export interface Config {
-  PORT: number;
-  NODE_ENV: 'development' | 'production';
-  DATABASE_URL: string;  // Add new option here
-}
-```
+## Adding an option
 
-2. **Add validation** in `config.validation.ts`:
-
-```typescript
-export const configValidationSchema = Joi.object<Config>({
-  PORT: Joi.number().port().required(),
-  NODE_ENV: Joi.string().valid('development', 'production').required(),
-  DATABASE_URL: Joi.string().uri().required(),  // Add validation here
-});
-```
-
-3. **Set the environment variable** in your `.env` file or environment.
-
-That's it. The new option is now type-safe and validated at startup.
+1. Add it to `AppConfig` in `config.types.ts`.
+2. Add it to `configSchema` in `config.validation.ts`. If it's a secret, also add it to `SECRET_KEY_NAMES` and `scripts/generate-keys.mjs`.
+3. Add it to `.env.example`, `.env.test` and, if CI needs a non-default value, `.github/workflows/ci.yml`.
+4. Cover it in `config.validation.spec.ts`.

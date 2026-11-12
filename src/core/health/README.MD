@@ -1,54 +1,22 @@
 # Health Module
 
-The Health module provides a health check endpoint at `GET /health`
+| Route | Who can call it | Behaviour |
+|---|---|---|
+| `GET /health/live` | anyone (public) | `200 {status:'ok'}`. Touches no dependency, so a DB outage never restarts the container. The Docker `HEALTHCHECK` uses it. |
+| `GET /health/ready` | IPs in `READINESS_ALLOWED_IPS` (default loopback); everyone else gets `404` | Runs every registered check in parallel (1 s timeout each). Returns `200 {status:'ok', checks}` or `503 {status:'unavailable', checks}`. Reasons are logged, never returned. |
 
-## Enable / Disable
+## Registering a check
 
-The health check is controlled by the `HEALTH_CHECK_ENABLED` environment variable:
-
-| Value   | Behavior                                         |
-| ------- | ------------------------------------------------ |
-| `true`  | Full health check is performed                   |
-| `false` | Returns an empty response (default)              |
-
-Add to your `.env` file:
-
-```env
-HEALTH_CHECK_ENABLED=true
-```
-
-**Note:** When disabled (default), the endpoint still responds but skips all health indicators and returns `{ status: 'ok', details: {} }`.
-
-## Adding New Health Checks
-
-To add custom health indicators, modify `health.service.ts`:
+`HealthModule` is global. Inject `ReadinessRegistry` and register in `onModuleInit`:
 
 ```typescript
-import { Injectable } from '@nestjs/common';
-import {
-  HealthCheckService,
-  HttpHealthIndicator,
-  MemoryHealthIndicator,
-} from '@nestjs/terminus';
-
-@Injectable()
-export class HealthService {
-  constructor(
-    private readonly healthCheckService: HealthCheckService,
-    private readonly http: HttpHealthIndicator,
-    private readonly memory: MemoryHealthIndicator,
-  ) {}
-
-  checkHealth() {
-    return this.healthCheckService.check([
-      // Check external service
-      () => this.http.pingCheck('api', 'https://api.example.com'),
-      // Check memory heap
-      () => this.memory.checkHeap('memory_heap', 150 * 1024 * 1024),
-    ]);
-  }
+onModuleInit() {
+  this.readiness.register('rbac_snapshot', async () =>
+    this.snapshot.isLoaded() ? 'up' : { down: 'not_loaded' },
+  );
 }
 ```
 
-For the full list of available health indicators and custom indicator creation, see the official NestJS documentation:
-**[https://docs.nestjs.com/recipes/terminus](https://docs.nestjs.com/recipes/terminus)**
+Built in: `database` (`SELECT 1`) and `config` (all keys decode, active cursor kid exists). Registering no checks at all counts as not ready.
+
+Planned registrations: RBAC snapshot, route declarations, erasers for every module that stores user data, SMTP, the storage backend.
