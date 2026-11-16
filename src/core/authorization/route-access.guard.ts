@@ -8,6 +8,7 @@ import type { FastifyRequest } from 'fastify';
 
 import { AppException } from '@/core/errors/app.exception';
 
+import { CsrfPolicy } from './csrf';
 import { getRouteAccess } from './route-access';
 
 /**
@@ -18,6 +19,8 @@ import { getRouteAccess } from './route-access';
 @Injectable()
 export class RouteAccessGuard implements CanActivate {
   private readonly logger = new Logger('Authorization');
+
+  constructor(private readonly csrf: CsrfPolicy) {}
 
   canActivate(context: ExecutionContext): boolean {
     if (context.getType() !== 'http') return true;
