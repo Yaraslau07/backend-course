@@ -71,8 +71,9 @@ export class RouteAccessGuard implements CanActivate {
   }
 
   /**
-   * Replaced by access → active user → CSRF → RBAC in C11. CSRF belongs after identity there
-   * (spec 1.3 step 5), so it is deliberately not checked here.
+   * Replaced in C11 by access → active user → CSRF → IP and user rate limits → RBAC. CSRF and the
+   * limits belong after identity there (spec 1.3 step 5), so neither is checked here: the branch
+   * refuses every request anyway.
    */
   private protectedChain(context: ExecutionContext): never {
     this.logger.warn(

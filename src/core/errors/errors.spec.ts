@@ -10,7 +10,7 @@ import { QueryFailedError } from 'typeorm';
 
 import { AppException } from './app.exception';
 import { classifyDbError } from './db-errors';
-import { ERROR_CATALOGUE } from './error-catalogue';
+import { ERROR_CATALOGUE, STATUS_TO_CODE } from './error-catalogue';
 import { safeStack, toErrorResponse } from './error-response';
 import { validationExceptionFactory } from './validation';
 
@@ -175,7 +175,10 @@ describe('toErrorResponse()', () => {
     [new NotFoundException('Cannot GET /x?q=secret'), 404, 'not_found'],
     [new HttpException('x', 429), 429, 'too_many_requests'],
     [new HttpException('x', 409), 409, 'conflict'],
+    [new HttpException('x', 405), 405, 'method_not_allowed'],
+    [new HttpException('x', 408), 408, 'request_timeout'],
     [new HttpException('x', 413), 413, 'payload_too_large'],
+    [new HttpException('x', 422), 422, 'unprocessable_entity'],
     [new HttpException('x', 415), 415, 'unsupported_media_type'],
     [new HttpException('x', 503), 503, 'service_unavailable'],
     [new HttpException('x', 504), 504, 'gateway_timeout'],
@@ -193,14 +196,20 @@ describe('toErrorResponse()', () => {
     },
   );
 
-  it('keeps the status of an unmapped 4xx and calls it bad_request', () => {
+  it('turns an unmapped 4xx into a plain 400 bad_request, so a code always means one status', () => {
     const response = toErrorResponse(new HttpException('teapot', 418));
 
-    expect(response.status).toBe(418);
+    expect(response.status).toBe(400);
     expect(response.body).toMatchObject({
-      statusCode: 418,
+      statusCode: 400,
       code: 'bad_request',
     });
+  });
+
+  it('gives every code in the status map the status of its catalogue entry', () => {
+    for (const [status, code] of Object.entries(STATUS_TO_CODE)) {
+      expect(ERROR_CATALOGUE[code].status).toBe(Number(status));
+    }
   });
 
   it('turns an unmapped 5xx into internal_error', () => {

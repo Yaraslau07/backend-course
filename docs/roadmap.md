@@ -114,7 +114,7 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
    - the admin CRUD for roles, permissions, grants and user roles
    - the last-`rbac@manage`-holder guard
    - the `user` role assigned on activation
-5. **Authorization chain** (spec 1.3): access → active user → CSRF → RBAC → resource → ownership, with `503 authorization_unavailable`.
+5. **Authorization chain** (spec 1.3): access → active user → CSRF → IP and user rate limits → RBAC → resource → ownership, with `503 authorization_unavailable`. It replaces the fail-closed `protectedChain` in `route-access.guard.ts`, and must enforce the route's `@RateLimit` policies, both kinds (D37).
 
 ## Phase 2: User features
 

@@ -25,6 +25,21 @@ function firstPath(value: unknown): string {
   return typeof path === 'string' ? path : '';
 }
 
+/** Method names on the prototype chain, own ones first, including handlers of a base controller. */
+function handlerNames(prototype: object): string[] {
+  const names = new Set<string>();
+  for (
+    let level: object | null = prototype;
+    level && level !== Object.prototype;
+    level = Object.getPrototypeOf(level) as object | null
+  ) {
+    for (const name of Object.getOwnPropertyNames(level)) {
+      if (name !== 'constructor') names.add(name);
+    }
+  }
+  return [...names];
+}
+
 function joinPath(...parts: string[]): string {
   const segments = parts
     .map((part) => part.replace(/^\/+|\/+$/g, ''))
@@ -82,7 +97,7 @@ export class RouteDeclarationScanner implements OnModuleInit {
       );
       const prototype = controller.prototype as Record<string, unknown>;
 
-      for (const name of Object.getOwnPropertyNames(prototype)) {
+      for (const name of handlerNames(prototype)) {
         const handler = prototype[name];
         if (name === 'constructor' || typeof handler !== 'function') continue;
         const method = Reflect.getMetadata(METHOD_METADATA, handler) as

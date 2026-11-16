@@ -128,3 +128,13 @@ A link is `FRONTEND_URL + <path> + #token=<token>`, with one path per scenario (
 
 ## D36: nodemailer 10.3.1, pinned (2026-11-16)
 The latest release (10.6.0) was a day old when this was written. 10.3.1 is the newest one that had been out for two weeks, a buffer against a compromised or broken release. It ships its own types, so there is no `@types/nodemailer`. Upgrade deliberately, not through a caret range.
+
+## D37: Phase 1b review fixes (2026-11-16, amends D18, D21, D24, D32, D34)
+From the `/code-review` of C2–C6:
+- **Failure-only limits reserve, then release** (amends D32). `peek()` then `record()` let 50 concurrent wrong passwords all reach the password check. Now `consume()` takes a slot atomically *before* the check, and `release()` gives it back on success. At most 5 checks per email and IP can be in flight or failed within 15 minutes; `record()` is gone.
+- **SMTP is a non-critical readiness check** (amends D34). An SMTP outage marked every instance not ready, which would take logins, profiles and lists down with mail. Readiness checks can now be registered with `critical: false`: they are reported but don't change `status`. Only the challenge flows need SMTP, and they answer 503 themselves. The check result is also cached for 30 s, so probes don't open an SMTP connection each time.
+- **A code always means one status** (amends D18). An HttpException with an unmapped 4xx used to keep its status but be called `bad_request`. Now 405, 408 and 422 have their own codes, and any other 4xx becomes a plain `400 bad_request`.
+- **Form-encoded bodies are refused** (amends D21). Registering our JSON parser also stops Nest from installing its `application/x-www-form-urlencoded` parser, so such bodies get `415`. That is intended: this is a JSON API, and HTML forms are the classic CSRF vector.
+- **The route scan follows inheritance** (amends D24). A handler inherited from a base controller is now scanned too, so it can't take traffic undeclared.
+- **Counter rows:** `expires_at` is now always the newest stored hit plus the window (a refusal no longer pushes it), and `consume()` evaluates the live hits once.
+- **Still open, by design:** IP- and user-keyed limits on protected routes are enforced only once the chain exists (C11); until then those routes refuse every request.

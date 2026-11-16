@@ -5,6 +5,7 @@ import type { AppConfig } from '@/core/config/config.types';
 
 import { getRouteRateLimits, RateLimit } from './rate-limit.decorator';
 import {
+  type ConfigGetter,
   policyLimit,
   RATE_LIMIT_POLICIES,
   type RateLimitName,
@@ -13,13 +14,20 @@ import { rateLimitKey } from './rate-limit.key';
 
 const SECRET = Buffer.alloc(32, 9).toString('base64url');
 
+/** A config accessor that knows only the registration limit. */
+const getter =
+  (perHour: number): ConfigGetter =>
+  <K extends keyof AppConfig>(key: K) =>
+    ({ REGISTRATION_RATE_LIMIT_PER_HOUR: perHour })[
+      key as 'REGISTRATION_RATE_LIMIT_PER_HOUR'
+    ] as AppConfig[K];
+
 describe('RATE_LIMIT_POLICIES', () => {
   it('matches the numbers in the specs', () => {
-    const config = { REGISTRATION_RATE_LIMIT_PER_HOUR: 10 } as AppConfig;
     const table = Object.fromEntries(
       Object.entries(RATE_LIMIT_POLICIES).map(([name, policy]) => [
         name,
-        [policyLimit(policy, config), policy.windowSeconds, policy.by],
+        [policyLimit(policy, getter(10)), policy.windowSeconds, policy.by],
       ]),
     );
 
@@ -48,8 +56,7 @@ describe('RATE_LIMIT_POLICIES', () => {
   });
 
   it('takes the registration limit from REGISTRATION_RATE_LIMIT_PER_HOUR', () => {
-    const config = { REGISTRATION_RATE_LIMIT_PER_HOUR: 3 } as AppConfig;
-    expect(policyLimit(RATE_LIMIT_POLICIES.registration_ip, config)).toBe(3);
+    expect(policyLimit(RATE_LIMIT_POLICIES.registration_ip, getter(3))).toBe(3);
   });
 });
 

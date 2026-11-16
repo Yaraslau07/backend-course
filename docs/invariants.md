@@ -76,6 +76,7 @@ Generic codes, used when nothing more specific applies:
 | 401 | `invalid_session` | also any stray 401 |
 | 403 | `forbidden` | a plain 403 that isn't one of the specific ones |
 | 404 | `not_found` | missing resource or route |
+| 405, 408, 422 | `method_not_allowed`, `request_timeout`, `unprocessable_entity` | any other 4xx becomes `400 bad_request`, so a code always means one status (D37) |
 | 409 | `conflict` | includes an unhandled unique violation (`23505`) |
 | 413, 415 | `payload_too_large`, `unsupported_media_type` | |
 | 429 | `too_many_requests` | sets `Retry-After` when `retryAfterSeconds` is given |
@@ -115,7 +116,7 @@ email (cleartext), password, password hash, OTP, magic-link token, HMAC, JWT, `C
 
 - Every limit is a named policy in `src/core/rate-limit/rate-limit.policies.ts`, with its spec section. Exceeding one is `429 too_many_requests` with `retryAfterSeconds` and `Retry-After`.
 - Windows slide: at most N allowed hits in any window. Refused requests don't count (D29).
-- IP-keyed policies go on routes with `@RateLimit()`; user-keyed ones only on `@RequirePermission` routes; custom ones (email + IP, emails sent, self vs. foreign) are applied in code with `RateLimiter` (D32).
+- IP-keyed policies go on routes with `@RateLimit()`; user-keyed ones only on `@RequirePermission` routes; custom ones (email + IP, emails sent, self vs. foreign) are applied in code with `RateLimiter` (D32). Failure-only limits `consume()` before the attempt and `release()` on success, so concurrent attempts can't exceed the limit (D37).
 - Stored keys are HMACs; the `rate_limits` table never holds an IP, email or id (D31).
 
 ## Cookies

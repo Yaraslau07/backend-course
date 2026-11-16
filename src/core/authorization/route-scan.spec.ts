@@ -31,6 +31,19 @@ class BadController {
   conflict() {}
 }
 
+/** A base class with a route: the subclass inherits it, so the scan must see it. */
+class BaseController {
+  @Get('inherited')
+  inherited() {}
+}
+
+@Controller('child')
+class ChildController extends BaseController {
+  @Get('own')
+  @Public()
+  own() {}
+}
+
 function discoveryOf(...controllers: (new () => unknown)[]): DiscoveryService {
   return {
     getControllers: () => controllers.map((metatype) => ({ metatype })),
@@ -62,6 +75,26 @@ describe('RouteDeclarationScanner', () => {
         route: 'POST /good/:id/things',
         handler: 'GoodController.create',
         access: { kind: 'protected', permission: 'things', action: 'create' },
+      },
+    ]);
+  });
+
+  it('includes routes inherited from a base controller', () => {
+    const scanner = new RouteDeclarationScanner(
+      discoveryOf(ChildController),
+      new ReadinessRegistry(),
+    );
+
+    expect(scanner.scan()).toEqual([
+      {
+        route: 'GET /child/own',
+        handler: 'ChildController.own',
+        access: { kind: 'public' },
+      },
+      {
+        route: 'GET /child/inherited',
+        handler: 'ChildController.inherited',
+        access: { kind: 'invalid', reason: 'missing' },
       },
     ]);
   });

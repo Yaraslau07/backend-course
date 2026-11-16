@@ -4,8 +4,9 @@ export const RATE_LIMIT_METADATA = 'rate-limit:policies';
 
 /**
  * Applies spec rate limits to a route, checked by the route guard before the handler.
- * IP-keyed policies run on every route; user-keyed ones need a session, so they are only
- * valid on `@RequirePermission` routes (the route scan refuses them elsewhere).
+ * IP-keyed policies may go on any route; user-keyed ones need a session, so they are only
+ * valid on `@RequirePermission` routes (the route scan refuses them elsewhere). On protected
+ * routes both kinds are enforced by the authorization chain (C11).
  */
 export const RateLimit =
   (...names: RateLimitName[]): MethodDecorator =>

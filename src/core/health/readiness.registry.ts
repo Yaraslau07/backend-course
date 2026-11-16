@@ -19,12 +19,22 @@ export const CHECK_TIMEOUT_MS = 1000;
 export class ReadinessRegistry {
   private readonly logger = new Logger(ReadinessRegistry.name);
   private readonly checks = new Map<string, ReadinessCheck>();
+  private readonly informational = new Set<string>();
 
-  register(name: string, check: ReadinessCheck): void {
+  /**
+   * `critical: false` reports the check without letting it fail readiness: for a dependency
+   * only some requests need (SMTP), whose outage must not take the whole API out of rotation.
+   */
+  register(
+    name: string,
+    check: ReadinessCheck,
+    options: { critical?: boolean } = {},
+  ): void {
     if (this.checks.has(name)) {
       throw new Error(`Readiness check "${name}" is already registered`);
     }
     this.checks.set(name, check);
+    if (options.critical === false) this.informational.add(name);
   }
 
   names(): string[] {
@@ -41,8 +51,9 @@ export class ReadinessRegistry {
 
     const checks = Object.fromEntries(results) as ReadinessReport['checks'];
     // No checks registered means nothing has proven the app ready.
+    const critical = results.filter(([name]) => !this.informational.has(name));
     const ok =
-      results.length > 0 && results.every(([, state]) => state === 'up');
+      critical.length > 0 && critical.every(([, state]) => state === 'up');
     return { status: ok ? 'ok' : 'unavailable', checks };
   }
 

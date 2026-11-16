@@ -35,6 +35,11 @@ export const ERROR_CATALOGUE = {
 
   /* 404, 409, 413, 415, 429 */
   not_found: { status: 404, message: 'The resource was not found.' },
+  method_not_allowed: {
+    status: 405,
+    message: 'The method is not allowed for this resource.',
+  },
+  request_timeout: { status: 408, message: 'The request took too long.' },
   conflict: {
     status: 409,
     message: 'The request conflicts with the current state.',
@@ -44,6 +49,10 @@ export const ERROR_CATALOGUE = {
   unsupported_media_type: {
     status: 415,
     message: 'The content type is not supported.',
+  },
+  unprocessable_entity: {
+    status: 422,
+    message: 'The request could not be processed.',
   },
   too_many_requests: {
     status: 429,
@@ -72,9 +81,12 @@ export const STATUS_TO_CODE: Readonly<Record<number, ErrorCode>> = {
   401: 'invalid_session',
   403: 'forbidden',
   404: 'not_found',
+  405: 'method_not_allowed',
+  408: 'request_timeout',
   409: 'conflict',
   413: 'payload_too_large',
   415: 'unsupported_media_type',
+  422: 'unprocessable_entity',
   429: 'too_many_requests',
   500: 'internal_error',
   503: 'service_unavailable',

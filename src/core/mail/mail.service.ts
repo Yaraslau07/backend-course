@@ -16,6 +16,8 @@ import {
 
 /** The whole send (connect, greeting, transfer) must finish within this, or it is a 503 (D33). */
 export const MAIL_TIMEOUT_MS = 2000;
+/** How long a readiness answer about SMTP is reused, so probes don't open a connection each time. */
+export const MAIL_CHECK_CACHE_MS = 30_000;
 export const MAIL_TRANSPORT = Symbol('MAIL_TRANSPORT');
 export type MailTransport = Pick<Transporter, 'sendMail' | 'verify'>;
 
@@ -61,6 +63,7 @@ function failureReason(error: unknown): string {
 @Injectable()
 export class MailService implements OnModuleInit {
   private readonly logger = new Logger('Mail');
+  private lastCheck?: { at: number; result: CheckResult };
 
   constructor(
     @Inject(MAIL_TRANSPORT) private readonly transport: MailTransport,
@@ -68,8 +71,12 @@ export class MailService implements OnModuleInit {
     private readonly registry: ReadinessRegistry,
   ) {}
 
+  /**
+   * Reported in readiness, but not critical (D37): only the challenge flows need SMTP, and they
+   * answer 503 themselves. An SMTP outage must not take logins, profiles and lists down with it.
+   */
   onModuleInit(): void {
-    this.registry.register('smtp', () => this.check());
+    this.registry.register('smtp', () => this.check(), { critical: false });
   }
 
   /** Throws MailUnavailableError when SMTP fails or takes longer than MAIL_TIMEOUT_MS. */
@@ -107,13 +114,20 @@ export class MailService implements OnModuleInit {
     );
   }
 
-  /** Readiness: the server accepts a connection (and our credentials, if any). */
+  /** Readiness: the server accepts a connection (and our credentials). Cached for 30 s. */
   async check(): Promise<CheckResult> {
+    const now = Date.now();
+    if (this.lastCheck && now - this.lastCheck.at < MAIL_CHECK_CACHE_MS) {
+      return this.lastCheck.result;
+    }
+    let result: CheckResult;
     try {
       await withTimeout(this.transport.verify(), MAIL_TIMEOUT_MS);
-      return 'up';
+      result = 'up';
     } catch (error) {
-      return { down: failureReason(error) };
+      result = { down: failureReason(error) };
     }
+    this.lastCheck = { at: now, result };
+    return result;
   }
 }

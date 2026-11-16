@@ -5,6 +5,7 @@ import { AppException } from '@/core/errors/app.exception';
 import { ReadinessRegistry } from '@/core/health/readiness.registry';
 
 import {
+  MAIL_CHECK_CACHE_MS,
   MAIL_TIMEOUT_MS,
   MailService,
   type MailTransport,
@@ -140,17 +141,36 @@ describe('MailService', () => {
     await outcome;
   });
 
-  it('registers an smtp readiness check backed by verify()', async () => {
-    const verify = jest.fn().mockResolvedValue(true);
+  it('registers a non-critical smtp readiness check backed by verify()', async () => {
+    const verify = jest
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('refused'), { code: 'ESOCKET' }),
+      );
     const { service, registry } = serviceWith({ verify });
+    registry.register('database', () => Promise.resolve('up'));
     service.onModuleInit();
 
-    expect(registry.names()).toContain('smtp');
-    expect(await service.check()).toBe('up');
+    expect(await registry.run()).toEqual({
+      status: 'ok',
+      checks: { database: 'up', smtp: 'down' },
+    });
+  });
 
-    verify.mockRejectedValueOnce(
-      Object.assign(new Error('refused'), { code: 'ESOCKET' }),
+  it('reuses a readiness answer for 30 s instead of connecting on every probe', async () => {
+    jest.useFakeTimers();
+    const verify = jest.fn().mockResolvedValue(true);
+    const { service } = serviceWith({ verify });
+
+    expect(await service.check()).toBe('up');
+    verify.mockRejectedValue(
+      Object.assign(new Error('x'), { code: 'ESOCKET' }),
     );
+    expect(await service.check()).toBe('up');
+    expect(verify).toHaveBeenCalledTimes(1);
+
+    jest.advanceTimersByTime(MAIL_CHECK_CACHE_MS);
     expect(await service.check()).toEqual({ down: 'ESOCKET' });
+    expect(verify).toHaveBeenCalledTimes(2);
   });
 });

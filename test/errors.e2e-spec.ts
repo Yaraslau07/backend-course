@@ -167,6 +167,15 @@ describe('Error envelope (e2e)', () => {
       });
     });
 
+    it('refuses form-encoded bodies: this is a JSON API (D37)', async () => {
+      const res = await http()
+        .post('/__probe/validate')
+        .type('form')
+        .send('email=x%40example.com');
+
+      expectEnvelope(res, 415, 'unsupported_media_type');
+    });
+
     it('answers an unsupported content type with unsupported_media_type', async () => {
       const res = await http()
         .post('/__probe/validate')

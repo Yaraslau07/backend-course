@@ -3,7 +3,6 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
 import { ConfigService } from '@/core/config/config.service';
-import type { AppConfig } from '@/core/config/config.types';
 import { AppException } from '@/core/errors/app.exception';
 
 import { rateLimitKey } from './rate-limit.key';
@@ -23,7 +22,7 @@ const CLEANUP_BATCH = 1000;
 
 /**
  * The hits of the existing row still inside the window, oldest first, capped at the newest $3.
- * Used in every statement below. $3 is the limit, $4 the window in seconds.
+ * $3 is the limit, $4 the window in seconds.
  */
 const LIVE_HITS = `ARRAY(
   SELECT h FROM (
@@ -38,7 +37,7 @@ const RETRY_AFTER = `GREATEST(1, ceil(extract(epoch FROM (hits[1] + make_interva
 
 interface Row {
   allowed: boolean;
-  retry_after: number;
+  retry_after: number | string;
 }
 
 /**
@@ -49,19 +48,16 @@ interface Row {
 @Injectable()
 export class RateLimiter {
   private readonly logger = new Logger('RateLimit');
-  /** Lets a policy read its limit from config (`registration_ip`) through the typed accessor. */
-  private readonly appConfig: AppConfig;
 
   constructor(
     @InjectDataSource() private readonly db: DataSource,
     private readonly config: ConfigService,
-  ) {
-    this.appConfig = new Proxy({} as AppConfig, {
-      get: (_target, key) => config.get(key as keyof AppConfig),
-    });
-  }
+  ) {}
 
-  /** Counts a hit if there is room. Refused requests are not counted. */
+  /**
+   * Counts a hit if there is room; refused requests are not counted. Pruning, the check and the
+   * append happen in one statement on the locked row, from a single evaluation of the live hits.
+   */
   async consume(
     policy: RateLimitPolicyName,
     parts: string[],
@@ -69,12 +65,14 @@ export class RateLimiter {
     const rows = await this.db.query<Row[]>(
       `INSERT INTO rate_limits AS r (bucket, key, hits, last_allowed, expires_at)
        VALUES ($1, $2, ARRAY[now()], true, now() + make_interval(secs => $4))
-       ON CONFLICT (bucket, key) DO UPDATE SET
-         last_allowed = cardinality(${LIVE_HITS}) < $3,
-         hits = CASE WHEN cardinality(${LIVE_HITS}) < $3
-                     THEN ${LIVE_HITS} || now()
-                     ELSE ${LIVE_HITS} END,
-         expires_at = now() + make_interval(secs => $4)
+       ON CONFLICT (bucket, key) DO UPDATE SET (last_allowed, hits, expires_at) = (
+         SELECT cardinality(live) < $3,
+                CASE WHEN cardinality(live) < $3 THEN live || now() ELSE live END,
+                -- When the newest stored hit leaves the window; a refusal adds no hit.
+                CASE WHEN cardinality(live) < $3 THEN now() ELSE live[cardinality(live)] END
+                  + make_interval(secs => $4)
+           FROM (SELECT ${LIVE_HITS} AS live) AS current
+       )
        RETURNING last_allowed AS allowed,
                  CASE WHEN last_allowed THEN 0 ELSE ${RETRY_AFTER} END AS retry_after`,
       this.params(policy, parts),
@@ -82,7 +80,7 @@ export class RateLimiter {
     return this.result(rows[0]);
   }
 
-  /** Whether a hit would be allowed now, without counting one. For failure-only limits. */
+  /** Whether a hit would be allowed now, without counting one. */
   async peek(
     policy: RateLimitPolicyName,
     parts: string[],
@@ -99,16 +97,17 @@ export class RateLimiter {
       : this.result(rows[0]);
   }
 
-  /** Counts a hit unconditionally (a failed login). Pair it with `peek()` before the attempt. */
-  async record(policy: RateLimitPolicyName, parts: string[]): Promise<void> {
+  /**
+   * Gives back one hit taken by `consume()`. For limits that count only failures (5 failed logins
+   * per email and IP): consume before the password check, which is atomic, so concurrent attempts
+   * can't all slip past the limit; release after a success (D32).
+   */
+  async release(policy: RateLimitPolicyName, parts: string[]): Promise<void> {
     await this.db.query(
-      `INSERT INTO rate_limits AS r (bucket, key, hits, last_allowed, expires_at)
-       VALUES ($1, $2, ARRAY[now()], true, now() + make_interval(secs => $4))
-       ON CONFLICT (bucket, key) DO UPDATE SET
-         hits = ${LIVE_HITS.replace('LIMIT $3', 'LIMIT $3 - 1')} || now(),
-         last_allowed = true,
-         expires_at = now() + make_interval(secs => $4)`,
-      this.params(policy, parts),
+      `UPDATE rate_limits
+          SET hits = hits[1:cardinality(hits) - 1]
+        WHERE bucket = $1 AND key = $2 AND cardinality(hits) > 0`,
+      this.params(policy, parts).slice(0, 2),
     );
   }
 
@@ -144,7 +143,7 @@ export class RateLimiter {
     return [
       policy,
       rateLimitKey(this.config.get('RATE_LIMIT_KEY_HMAC_KEY'), policy, parts),
-      policyLimit(definition, this.appConfig),
+      policyLimit(definition, (key) => this.config.get(key)),
       definition.windowSeconds,
     ];
   }

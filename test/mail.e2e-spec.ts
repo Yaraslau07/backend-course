@@ -136,16 +136,17 @@ describe('MailService when SMTP is unreachable (e2e)', () => {
     },
   );
 
-  it('reports smtp as down in readiness', async () => {
+  it('reports smtp as down in readiness without taking the app out of rotation', async () => {
     const { app } = await appOnPort(1);
     try {
       const res = await request(app.getHttpServer())
         .get('/health/ready')
-        .expect(503);
+        .expect(200);
 
-      expect((res.body as { checks: Record<string, string> }).checks.smtp).toBe(
-        'down',
-      );
+      expect(res.body).toMatchObject({
+        status: 'ok',
+        checks: { smtp: 'down' },
+      });
     } finally {
       await app.close();
     }
