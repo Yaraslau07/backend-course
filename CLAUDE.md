@@ -56,6 +56,7 @@ npm run migration:run
 
 ## Where things live
 
+- `docs/roadmap.md`: the build order (phases, what's done, what's next, what can run in parallel). **Start here when picking up work**, and update its status table when a phase lands.
 - `docs/specs/`: the assignment, verbatim, one file per lesson.
 - `docs/invariants.md`: shared rules (statuses, lock order, challenge semantics, error codes, safe profile, logging, keys, cookies).
 - `docs/decisions.md`: why things are the way they are (D1, D2, …). Add an entry for every non-obvious choice.

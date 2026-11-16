@@ -1,6 +1,6 @@
 # Known gaps
 
-A running list of what's still outstanding. Check it before assuming something is unhandled, and update it as gaps close or new ones appear.
+A running list of what's still outstanding. Check it before assuming something is unhandled, and update it as gaps close or new ones appear. For the overall build order, see `docs/roadmap.md`.
 
 ## Next: database schema (right after Phase 0)
 - No entities or migrations exist yet. Design the Part 1 schema in one initial migration:
