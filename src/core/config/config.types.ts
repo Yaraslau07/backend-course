@@ -50,6 +50,9 @@ export interface AppConfig {
   /* Irreversible pseudonyms in logs (e.g. unknown email on login) */
   LOG_PSEUDONYM_HMAC_KEY: string;
 
+  /* Rate-limit counter keys are HMACs of IPs, emails and user ids, never the values */
+  RATE_LIMIT_KEY_HMAC_KEY: string;
+
   /* Flow flags */
   REGISTRATION_EMAIL_CONFIRMATION_ENABLED: boolean;
   REGISTRATION_EMAIL_CONFIRMATION_METHOD: ConfirmationMethod;

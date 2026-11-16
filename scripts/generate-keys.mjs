@@ -13,6 +13,7 @@ const names = [
   'EMAIL_CHANGE_HMAC_KEY',
   'DELETION_CHALLENGE_HMAC_KEY',
   'LOG_PSEUDONYM_HMAC_KEY',
+  'RATE_LIMIT_KEY_HMAC_KEY',
 ];
 
 const lines = names.map((name) => `${name}=${key()}`);

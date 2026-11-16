@@ -34,6 +34,7 @@ const validEnv = (): Record<string, string> => ({
   EMAIL_CHANGE_HMAC_KEY: key(),
   DELETION_CHALLENGE_HMAC_KEY: key(),
   LOG_PSEUDONYM_HMAC_KEY: key(),
+  RATE_LIMIT_KEY_HMAC_KEY: key(),
   USER_LIST_CURSOR_ACTIVE_KEY_ID: 'k1',
   USER_LIST_CURSOR_HMAC_KEYS: `k1:${key()}`,
   SMTP_HOST: 'localhost',

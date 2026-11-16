@@ -108,7 +108,14 @@ email (cleartext), password, password hash, OTP, magic-link token, HMAC, JWT, `C
 
 ## Keys (all different, each ≥ 32 random bytes, base64url)
 
-`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `REGISTRATION_CHALLENGE_HMAC_KEY`, `LOGIN_CHALLENGE_HMAC_KEY`, `EMAIL_CHANGE_HMAC_KEY`, `DELETION_CHALLENGE_HMAC_KEY`, `LOG_PSEUDONYM_HMAC_KEY`, and every key in `USER_LIST_CURSOR_HMAC_KEYS`. Validated at boot (`src/core/config/config.validation.ts`). HMAC inputs use domain prefixes (for example `users-list-cursor`, `users-list-query`).
+`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `REGISTRATION_CHALLENGE_HMAC_KEY`, `LOGIN_CHALLENGE_HMAC_KEY`, `EMAIL_CHANGE_HMAC_KEY`, `DELETION_CHALLENGE_HMAC_KEY`, `LOG_PSEUDONYM_HMAC_KEY`, `RATE_LIMIT_KEY_HMAC_KEY`, and every key in `USER_LIST_CURSOR_HMAC_KEYS`. Validated at boot (`src/core/config/config.validation.ts`). HMAC inputs use domain prefixes (for example `users-list-cursor`, `users-list-query`).
+
+## Rate limits
+
+- Every limit is a named policy in `src/core/rate-limit/rate-limit.policies.ts`, with its spec section. Exceeding one is `429 too_many_requests` with `retryAfterSeconds` and `Retry-After`.
+- Windows slide: at most N allowed hits in any window. Refused requests don't count (D29).
+- IP-keyed policies go on routes with `@RateLimit()`; user-keyed ones only on `@RequirePermission` routes; custom ones (email + IP, emails sent, self vs. foreign) are applied in code with `RateLimiter` (D32).
+- Stored keys are HMACs; the `rate_limits` table never holds an IP, email or id (D31).
 
 ## Cookies
 

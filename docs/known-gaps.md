@@ -13,7 +13,7 @@ A running list of what's still outstanding. Check it before assuming something i
 - **Protected routes fail closed** (D25): until the authorization chain lands in C11, every `@RequirePermission` route answers `503 authorization_unavailable`, and so does a receipt route called without its header.
 - **CSRF on protected routes** runs after identity, so it arrives with the chain in C11 (D28). Public writes are checked now.
 - **Cross-site cookies:** for a frontend on another site, both auth cookies need `SameSite=None; Secure` (spec 1.2). That is a cookie attribute, set where cookies are issued (C9).
-- **Throttling:** `@nestjs/throttler` is installed but not wired (see D11). This needs per-route limits and an email+IP failure counter, and `TRUST_PROXY` has to be set correctly wherever IP-based limits matter.
+- **Rate limits are in place, but mostly unused yet:** each policy is applied by the checkpoint that adds its route (registration C8, login and refresh C9, …). User-keyed ones start working with the protected chain in C11.
 - **MailService:** nodemailer transport with a 2 s timeout, templates, and an `smtp` readiness check.
 
 ## Infrastructure
@@ -24,6 +24,10 @@ A running list of what's still outstanding. Check it before assuming something i
 
 ## Route declarations
 - The startup scan reports only the first path of a controller or handler that declares several aliases (`@Controller(['a', 'b'])`). The declaration applies to every alias anyway, since it sits on the handler.
+
+## Rate limits
+- `TRUST_PROXY` must be `true` behind a reverse proxy, or every client shares the proxy's IP budget. It must stay `false` when the app is reachable directly, or a client can pick its own IP with `X-Forwarded-For`.
+- The failure-only login limit (`peek()` then `record()`) can let a few extra attempts through when several fail at the same instant (D32).
 
 ## Errors
 - The pg pool has no `connectionTimeoutMillis`, so with Postgres unreachable but not refusing connections (a dropped network rather than a stopped server), a query can wait on the OS timeout instead of failing fast as a 503. To set in C9, where "DB down → 503, not 401" is tested.
