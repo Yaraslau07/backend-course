@@ -42,6 +42,14 @@ All variables are validated at startup by `src/core/config/config.validation.ts`
 | `GET /health/live` | public | process is up (used by the Docker `HEALTHCHECK`) |
 | `GET /health/ready` | `READINESS_ALLOWED_IPS` only (404 otherwise) | every registered check (DB, keys, …) is up; 503 if not |
 
+## Errors
+
+Every error is `{ statusCode, code, message, requestId }`, sometimes with safe extras such as `retryAfterSeconds` or, for validation, `errors: [{ field, rules }]`. The `requestId` matches the `X-Request-Id` header and the server logs. The codes are listed in `docs/invariants.md`.
+
+## Trying it
+
+`http/` holds request files for the WebStorm HTTP Client (pick the `dev` environment).
+
 ## Project structure
 
 ```
@@ -50,6 +58,7 @@ src/
 │   ├── app/        # root module + configureApp() shared with e2e tests
 │   ├── config/     # validated, typed config
 │   ├── database/   # TypeORM module (explicit transactions)
+│   ├── errors/     # error catalogue, AppException, the global filter
 │   ├── health/     # liveness, readiness + ReadinessRegistry
 │   └── logging/    # nestjs-pino, request ids, log pseudonyms
 ├── database/       # shared connection options, CLI data source, migrations

@@ -9,6 +9,8 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 
 import { AppConfig } from '@/core/config/config.types';
+import { AppException } from '@/core/errors/app.exception';
+import { validationExceptionFactory } from '@/core/errors/validation';
 import { genReqId } from '@/core/logging/request-id';
 
 export const ACCESS_COOKIE = 'access_token';
@@ -70,6 +72,26 @@ export async function configureApp(
         : false,
   });
 
+  // Fastify's JSON parser (with prototype-poisoning protection), but failing with our own
+  // invalid_json. Nest would otherwise wrap Fastify's error into an anonymous 400. Registering it
+  // here also stops Nest from installing its parser at init().
+  const parseJson = fastify.getDefaultJsonParser('error', 'error');
+  app.useBodyParser(
+    'application/json',
+    { bodyLimit: JSON_BODY_LIMIT },
+    (request, body, done) => {
+      // Nest hands over a Buffer and types the request loosely (HTTP/2 too); this app is HTTP/1 only.
+      void parseJson(
+        request as Parameters<typeof parseJson>[0],
+        Buffer.isBuffer(body) ? body.toString('utf8') : body,
+        (error, value) => {
+          if (error) done(new AppException('invalid_json'), undefined);
+          else done(null, value);
+        },
+      );
+    },
+  );
+
   // Auth cookies are plain JWTs with their own signatures, so no cookie-signing secret.
   await app.register(fastifyCookie);
 
@@ -87,6 +109,8 @@ export async function configureApp(
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      // Field names and rule names only; see src/core/errors/validation.ts.
+      exceptionFactory: validationExceptionFactory,
     }),
   );
 

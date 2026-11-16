@@ -1,0 +1,21 @@
+# Every error has the same shape: { statusCode, code, message, requestId } plus safe extras.
+# The message is fixed text for the code; it never repeats what was sent.
+# There is no public POST route yet, so the body examples use a missing one: Fastify parses the
+# body before deciding the route is missing. Real routes get their own files from C8 on.
+
+### Unknown route: 404 not_found, and the path and query are not echoed back
+GET {{baseUrl}}/no-such-route?q=anything
+
+### Malformed JSON: 400 invalid_json, with no part of the body in the answer
+POST {{baseUrl}}/no-such-route
+Content-Type: application/json
+
+{"email": "broken
+
+### Empty JSON body: 400 invalid_json
+POST {{baseUrl}}/no-such-route
+Content-Type: application/json
+
+### A request id you send (UUID only) comes back in X-Request-Id and in the error body
+GET {{baseUrl}}/no-such-route
+X-Request-Id: 9b2f6c1e-3d4a-4f5b-8c7d-0e1f2a3b4c5d

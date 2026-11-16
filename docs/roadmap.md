@@ -6,8 +6,8 @@ The order the assignment is being built in, and why. Update the status column as
 |---|---|---|---|
 | C0. Foundation | 0 | | ✅ done (PR #1) |
 | C1. Part 1 schema | 1a | 1.0–1.2, 1.5, 1.6 | ✅ done |
-| C2. Error envelope | 1b | | ⏭ next |
-| C3. Route declarations | 1b | 1.3 | pending |
+| C2. Error envelope | 1b | | ✅ done |
+| C3. Route declarations | 1b | 1.3 | ⏭ next |
 | C4. CSRF guard | 1b | 1.2, 1.3 | pending |
 | C5. Throttling | 1b | | pending |
 | C6. MailService | 1b | | pending |
@@ -80,7 +80,7 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
 
 **Sequential.** These were deferred from Phase 0; see `docs/known-gaps.md`.
 
-1. **Error envelope:** a global filter producing `{ statusCode, code, message, requestId }` plus safe extras; map Postgres `23505` to `409`.
+1. ✅ **Error envelope** (C2, D18–D22): a global filter producing `{ statusCode, code, message, requestId }` plus safe extras; Postgres `23505` → `409`, an unavailable database → `503`.
 2. **Route declarations:**
    - `@Public()`, `@RequirePermission(permission, action)`, `@Receipt(header)`
    - a startup scan registered as a readiness check, failing readiness on a missing or conflicting declaration
