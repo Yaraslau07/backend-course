@@ -9,6 +9,10 @@ export const ERROR_CATALOGUE = {
   validation_failed: { status: 400, message: 'The request failed validation.' },
   invalid_json: { status: 400, message: 'The request body is not valid JSON.' },
   invalid_cursor: { status: 400, message: 'The cursor is invalid.' },
+  invalid_challenge: {
+    status: 400,
+    message: 'The code or link is invalid or has expired.',
+  },
 
   /* 401: one code per kind, never saying which check failed */
   invalid_credentials: { status: 401, message: 'Invalid email or password.' },
@@ -45,6 +49,10 @@ export const ERROR_CATALOGUE = {
     message: 'The request conflicts with the current state.',
   },
   file_not_ready: { status: 409, message: 'The file is not ready yet.' },
+  challenge_conflict: {
+    status: 409,
+    message: 'This confirmation is no longer valid.',
+  },
   payload_too_large: { status: 413, message: 'The request body is too large.' },
   unsupported_media_type: {
     status: 415,
@@ -53,6 +61,14 @@ export const ERROR_CATALOGUE = {
   unprocessable_entity: {
     status: 422,
     message: 'The request could not be processed.',
+  },
+  attempts_exhausted: {
+    status: 429,
+    message: 'Too many wrong codes. Start again.',
+  },
+  resend_cooldown: {
+    status: 429,
+    message: 'Wait before asking for another email.',
   },
   too_many_requests: {
     status: 429,
