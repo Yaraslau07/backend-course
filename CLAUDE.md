@@ -42,6 +42,7 @@ npm run migration:check     # fails if entities and the migrated DB differ (CI r
 - **Secrets are base64url, ≥ 32 decoded bytes, and all different.** A new secret also goes into `SECRET_KEY_NAMES` and `scripts/generate-keys.mjs`. Never put a real key in a committed file. `.env.test` keys are test-only.
 - **Never log** the values listed under "Logging" in `docs/invariants.md`: emails, passwords, secrets, tokens, cookies, full URLs and query strings, bodies, headers, storage keys. Log ids, categories and counts.
 - **Errors go through `AppException(code, extras?)`** (`src/core/errors/`). The code fixes the status and the message; a new code goes into `ERROR_CATALOGUE`, a new extra into `ErrorExtras`. Never put a request value, a library message or a constraint name into a response (D18).
+- **Every route needs an access declaration** (`src/core/authorization/route-access.ts`): `@Public()`, `@Internal()`, one `@RequirePermission(permission, action)`, or `@Receipt(header)` with at most one pair. Without one, readiness fails and the route answers 503. Test-only probe routes need one too.
 - **Permission before lookup:** a protected handler never reads the target resource before RBAC allows it, so the answer is `403`, not `404`.
 
 ## Gotchas
@@ -69,5 +70,5 @@ npm run migration:check     # fails if entities and the migrated DB differ (CI r
 - `docs/invariants.md`: shared rules (statuses, lock order, challenge semantics, error codes, safe profile, logging, keys, cookies).
 - `docs/decisions.md`: why things are the way they are (D1, D2, …). Add an entry for every non-obvious choice.
 - `docs/known-gaps.md`: what's deliberately not done yet. Check it first and update it as gaps close.
-- `src/core/`: config, database, logging, health (the readiness registry) and app bootstrap.
+- `src/core/`: config, database, logging, errors, authorization (route declarations, the global guard), health (the readiness registry) and app bootstrap.
 - `src/modules/`: feature modules.

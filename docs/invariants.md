@@ -47,7 +47,8 @@ Shared semantics. Each scenario has **its own HMAC key**.
 
 access cookie → current user is `active` → CSRF (cross-origin writes) → RBAC `permission@action` → load resource → ownership → handler.
 
-- Every route declares one of: public; exactly one `permission@action`; a receipt header (optionally with one pair). A missing or conflicting declaration fails readiness.
+- Every route declares one of: `@Public()`; `@Internal()` (readiness only); exactly one `@RequirePermission(permission, action)`; `@Receipt(header)`, optionally with one pair. A missing or conflicting declaration, or a name that fails the RBAC pattern, fails readiness (`route_declarations`), and the route answers `503 authorization_unavailable` without running (D23, D24).
+- A receipt route with the header present runs the handler, which checks the receipt; the cookie is not read. Without the header it follows the pair's chain, or answers `401 invalid_session` if it has no pair (D26).
 - The permission check comes **before** looking up the target. Without the right you get `403`, never `404`.
 - Roles in a JWT, body, query or header are ignored. RBAC reads the current snapshot; if the snapshot version is stale or it is unavailable, return `503 authorization_unavailable`.
 

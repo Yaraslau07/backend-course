@@ -40,7 +40,7 @@ All variables are validated at startup by `src/core/config/config.validation.ts`
 | Route | Access | Meaning |
 |---|---|---|
 | `GET /health/live` | public | process is up (used by the Docker `HEALTHCHECK`) |
-| `GET /health/ready` | `READINESS_ALLOWED_IPS` only (404 otherwise) | every registered check (DB, keys, …) is up; 503 if not |
+| `GET /health/ready` | `READINESS_ALLOWED_IPS` only (404 otherwise) | every registered check (DB, keys, route declarations, …) is up; 503 if not |
 
 ## Errors
 
@@ -58,6 +58,7 @@ src/
 │   ├── app/        # root module + configureApp() shared with e2e tests
 │   ├── config/     # validated, typed config
 │   ├── database/   # TypeORM module (explicit transactions)
+│   ├── authorization/ # route access declarations, startup scan, the global guard
 │   ├── errors/     # error catalogue, AppException, the global filter
 │   ├── health/     # liveness, readiness + ReadinessRegistry
 │   └── logging/    # nestjs-pino, request ids, log pseudonyms

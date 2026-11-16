@@ -70,3 +70,15 @@ Nest wraps any Fastify error that has a `statusCode` into an anonymous `HttpExce
 
 ## D22: E2E tests capture logs and check them for leaks (2026-11-16)
 `LogCapture` (`test/utils/log-capture.ts`) replaces the log destination through the `LOG_SINK` provider and records every line at `debug`. `expectNoLeaks(config, values)` fails if any config secret, or any value the test sent (email, password, code, body), appears anywhere in the logs, and its failure message doesn't print the secret. nestjs-pino keeps one root logger per process, so a file creates its capturing app once, in `beforeAll`. Test-only routes live in `test/utils/*-probe.module.ts` and are passed to `createTestApp({ imports })`, so production code has no test hooks.
+
+## D23: Four kinds of route declaration, resolved once per handler (2026-11-16)
+Spec 1.3 names three: public, one `permission@action` pair, and a receipt (optionally with one pair). Readiness is a fourth case the spec describes separately ("only internal infrastructure"), so it gets `@Internal()`: the guard lets it through and the handler applies its IP gate. Treating it as `@Public()` would be wrong on paper, and leaving it undeclared would fail the scan. Decorators append to a list instead of overwriting, so `@Public()` plus `@RequirePermission()` is visible as a conflict rather than one silently winning. Names are normalized and checked with the RBAC pattern, so a typo in a permission name fails at startup, not at the first request.
+
+## D24: Misdeclared routes fail twice: readiness and the request (2026-11-16)
+The startup scan (`RouteDeclarationScanner`) logs every invalid route and keeps the `route_declarations` readiness check down, so an orchestrator never sends traffic to such a build. The guard independently answers `503 authorization_unavailable` without running the handler, for the case where traffic arrives anyway (spec 1.3: "if the request does reach the process"). The scan is static: declarations can't change at runtime, so it runs once.
+
+## D25: Protected routes fail closed until the chain exists (2026-11-16)
+Until C11 wires access → active user → CSRF → RBAC, the guard answers every protected route (and a receipt route called without its header) with `503 authorization_unavailable` and logs `category: authorization_chain`. A feature built before C11 can't accidentally be reachable without a permission check. The alternative, letting them through with a TODO, is exactly the bug the spec's "fails closed" rule exists to prevent.
+
+## D26: A receipt-only route without its header is a 401 (2026-11-16)
+The spec defines a receipt route without the header only when it also has a pair ("the request follows the usual chain"). With no pair there is no other way to identify the caller, which is what `401 invalid_session` means. The one receipt route in the specs (`GET /users/{id}/deletion-status`) has a pair, so this only decides what a future misuse looks like.

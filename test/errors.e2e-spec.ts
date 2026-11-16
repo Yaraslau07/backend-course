@@ -149,12 +149,22 @@ describe('Error envelope (e2e)', () => {
     });
 
     it('answers a body over 1 MiB with payload_too_large', async () => {
-      const res = await http()
-        .post('/__probe/validate')
-        .set('Content-Type', 'application/json')
-        .send(JSON.stringify({ email: 'x'.repeat(1024 * 1024 + 1) }));
+      // In-process (no socket): over a real connection Fastify answers 413 and closes it while the
+      // client is still uploading, so the client may see ECONNRESET instead of the response.
+      const res = await app.inject({
+        method: 'POST',
+        url: '/__probe/validate',
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({ email: 'x'.repeat(1024 * 1024 + 1) }),
+      });
 
-      expectEnvelope(res, 413, 'payload_too_large');
+      expect(res.statusCode).toBe(413);
+      expect(JSON.parse(res.body)).toEqual({
+        statusCode: 413,
+        code: 'payload_too_large',
+        message: ERROR_CATALOGUE.payload_too_large.message,
+        requestId: res.headers['x-request-id'],
+      });
     });
 
     it('answers an unsupported content type with unsupported_media_type', async () => {

@@ -1,4 +1,4 @@
-import type { ExecutionContext } from '@nestjs/common';
+import { type ExecutionContext, Logger } from '@nestjs/common';
 
 import { AppException } from '@/core/errors/app.exception';
 
@@ -54,6 +54,13 @@ function rejection(run: () => unknown): string | undefined {
 
 describe('RouteAccessGuard', () => {
   const guard = new RouteAccessGuard();
+
+  beforeEach(() => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+  });
+
+  afterEach(() => jest.restoreAllMocks());
 
   it('lets public and internal routes through without any session', () => {
     expect(guard.canActivate(contextFor('publicRoute'))).toBe(true);
