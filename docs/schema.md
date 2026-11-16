@@ -101,3 +101,17 @@ One row per user being deleted (spec 1.6).
 | `next_attempt_at` | set exactly while `queued` (`ck_storage_cleanup_jobs_state`) |
 
 `idx_storage_cleanup_jobs_claim (status, next_attempt_at)` is the worker's index.
+
+## rate_limits
+
+One sliding-window counter per policy and key (D29, D31).
+
+| Column | Notes |
+|---|---|
+| `bucket` | the policy name, for example `login_ip` |
+| `key` | HMAC-SHA256 hex of the key parts (`ck_rate_limits_key`); never a raw IP, email or id |
+| `hits` | `timestamptz[]`: allowed hits still inside the window, oldest first, at most `limit` |
+| `last_allowed` | whether the latest consume was allowed, so one statement can decide and report |
+| `expires_at` | when the newest hit leaves the window; `idx_rate_limits_expires_at` serves the cleanup |
+
+`hits` is plain `timestamptz[]`, not `timestamptz(3)[]`: TypeORM can't read an array column's precision back, so the latter would always show as drift. The values never leave the database.

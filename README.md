@@ -60,6 +60,7 @@ src/
 │   ├── database/   # TypeORM module (explicit transactions)
 │   ├── authorization/ # route access declarations, startup scan, the global guard
 │   ├── errors/     # error catalogue, AppException, the global filter
+│   ├── rate-limit/ # spec rate limits: policies, Postgres sliding windows
 │   ├── health/     # liveness, readiness + ReadinessRegistry
 │   └── logging/    # nestjs-pino, request ids, log pseudonyms
 ├── database/       # shared connection options, CLI data source, migrations

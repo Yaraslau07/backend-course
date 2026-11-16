@@ -92,3 +92,27 @@ Specs 1.2 and 1.3 define the check: a write from another origin needs that exact
 
 ## D28: Where CSRF runs in the chain (2026-11-16)
 Public and internal writes (login, registration, refresh, logout) are checked in the route guard, since they have no session step. A receipt route with its header is checked there too. Protected routes are checked **after** the session and active-user steps, which spec 1.3 orders as access → user → CSRF → RBAC: an unauthenticated cross-origin write is a `401`, not a `403`. That position is wired in C11, so today a protected write is still the fail-closed `503`.
+
+## D29: Rate limits are our own sliding windows in Postgres; `@nestjs/throttler` removed (2026-11-16, supersedes D11)
+The specs state limits as "no more than N per window" (30 logins per IP per minute, 5 failed checks per email and IP in 15 minutes, …). They also assume several instances (RBAC version checks on every request, DB-leased jobs, local file storage only for a single dev instance) and name no shared store other than Postgres. So the counters live in Postgres (table `rate_limits`), shared by all instances and kept across restarts.
+- **Exact sliding window.** Each row holds the timestamps of the allowed hits still inside the window. A fixed window would let 2N requests through around a boundary, which breaks "no more than N per minute".
+- **One statement per check.** Pruning, the limit check and the append happen in one `INSERT … ON CONFLICT DO UPDATE`, so the row lock serializes concurrent requests and exactly N get through (tested with 50 at once).
+- **Refused requests aren't counted**, so a client that backs off gets its budget back on schedule.
+- **Why not `@nestjs/throttler`:** its named throttlers apply to every route unless skipped, and its guard runs outside our route guard. It also can't express "count only failures" or "count emails sent". The parts we would keep (a storage interface) are less code to write than to adapt.
+
+## D30: Registration resend shares the registration threshold (2026-11-16)
+Spec 1.0 asks for a rate limit on "registration and resending" but gives one configured number (`REGISTRATION_RATE_LIMIT_PER_HOUR`). Both use it, in separate buckets (`registration_ip`, `registration_resend_ip`), so resending doesn't eat the registration budget. The per-challenge 60 s cooldown still applies on top.
+
+## D31: Counter keys are HMACs, under their own key (2026-11-16)
+A key like `email + IP` would put PII in a table, and a plain SHA-256 of an IPv4 address can be reversed by trying all 2³² of them. So the stored key is `HMAC-SHA256(RATE_LIMIT_KEY_HMAC_KEY, policy + parts)`. The key is new and separate: `LOG_PSEUDONYM_HMAC_KEY` is documented as used for nothing else, and the specs require every key to be distinct.
+
+## D32: How the different kinds of limit are applied (2026-11-16)
+All policies are in one table (`RATE_LIMIT_POLICIES`, each citing its spec section), so no feature invents a number.
+- **IP-keyed policies** are declared on routes (`@RateLimit('login_ip')`) and checked by the route guard after CSRF. A refused cross-origin write therefore doesn't use up the real client's budget. The IP is `request.ip`, which follows `TRUST_PROXY`.
+- **User-keyed policies** need a signed-in user, so they are only valid on `@RequirePermission` routes. Elsewhere the route is invalid (`user_limit_without_session`). The guard applies them in the protected chain from C11.
+- **Custom policies** are applied in code where only the handler knows the key or the moment:
+  - login failures per email and IP: `peek()` before the password check, `record()` on failure;
+  - emails sent per user: `consume()` before sending;
+  - own vs. someone else's profile: decided after comparing ids.
+
+  `peek()`/`record()` can let a few extra failures through when several arrive at the same instant. That is accepted, because the alternative (reserving a slot before checking the password) would count successes too.

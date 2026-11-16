@@ -57,7 +57,9 @@ function contextFor(
     getType: () => type,
     getHandler: () => Handlers.prototype[handler],
     getClass: () => Handlers,
-    switchToHttp: () => ({ getRequest: () => ({ method, headers }) }),
+    switchToHttp: () => ({
+      getRequest: () => ({ method, headers, ip: '203.0.113.9' }),
+    }),
   } as unknown as ExecutionContext;
 }
 

@@ -15,6 +15,7 @@ export const SECRET_KEY_NAMES = [
   'EMAIL_CHANGE_HMAC_KEY',
   'DELETION_CHALLENGE_HMAC_KEY',
   'LOG_PSEUDONYM_HMAC_KEY',
+  'RATE_LIMIT_KEY_HMAC_KEY',
 ] as const satisfies readonly (keyof AppConfig)[];
 
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
@@ -188,6 +189,7 @@ export const configSchema = Joi.object<AppConfig>({
   USER_LIST_CURSOR_ACTIVE_KEY_ID: Joi.string().pattern(KID).required(),
   USER_LIST_CURSOR_HMAC_KEYS: cursorKeyRing(),
   LOG_PSEUDONYM_HMAC_KEY: secretKey(),
+  RATE_LIMIT_KEY_HMAC_KEY: secretKey(),
 
   /* Flows */
   REGISTRATION_EMAIL_CONFIRMATION_ENABLED: Joi.boolean().default(false),

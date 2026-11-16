@@ -2,6 +2,7 @@ import { applyDecorators } from '@nestjs/common';
 import { ApiCookieAuth } from '@nestjs/swagger';
 
 import { ACCESS_COOKIE } from '@/core/app/configure-app';
+import { getRouteRateLimits } from '@/core/rate-limit/rate-limit.decorator';
 import { RBAC_NAME_PATTERN } from '@/modules/rbac/rbac.types';
 
 /**
@@ -153,6 +154,14 @@ export function getRouteAccess(handler: object): RouteAccess {
     access = resolveRouteAccess(
       Reflect.getMetadata(ROUTE_ACCESS_METADATA, handler),
     );
+    // A user-keyed limit needs a signed-in user, which only the protected chain establishes.
+    if (
+      access.kind !== 'invalid' &&
+      access.kind !== 'protected' &&
+      getRouteRateLimits(handler).user.length > 0
+    ) {
+      access = { kind: 'invalid', reason: 'user_limit_without_session' };
+    }
     cache.set(handler, access);
   }
   return access;

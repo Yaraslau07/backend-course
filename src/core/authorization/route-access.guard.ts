@@ -10,6 +10,8 @@ import { AppException } from '@/core/errors/app.exception';
 import { RateLimiter } from '@/core/rate-limit/rate-limiter.service';
 
 import { CsrfPolicy } from './csrf';
+import { getRouteRateLimits } from '@/core/rate-limit/rate-limit.decorator';
+
 import { getRouteAccess } from './route-access';
 
 /**
@@ -26,7 +28,6 @@ export class RouteAccessGuard implements CanActivate {
     private readonly limiter: RateLimiter,
   ) {}
 
-  // eslint-disable-next-line @typescript-eslint/require-await -- stub, replaced by the implementation commit
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (context.getType() !== 'http') return true;
 
@@ -37,6 +38,7 @@ export class RouteAccessGuard implements CanActivate {
       case 'internal':
         // Public writes (login, registration, refresh, logout) are CSRF-checked too (spec 1.2).
         this.csrf.assert(request, this.handlerName(context));
+        await this.enforceIpLimits(context, request);
         return true;
 
       case 'receipt': {
@@ -44,6 +46,7 @@ export class RouteAccessGuard implements CanActivate {
         // With the header, the handler verifies the receipt; the cookie is not read at all.
         if (typeof value === 'string' && value.length > 0) {
           this.csrf.assert(request, this.handlerName(context));
+          await this.enforceIpLimits(context, request);
           return true;
         }
         // Without it, a receipt-only route has no other way to know the caller.
@@ -80,6 +83,19 @@ export class RouteAccessGuard implements CanActivate {
       'protected route refused: the authorization chain is not wired yet',
     );
     throw new AppException('authorization_unavailable');
+  }
+
+  /**
+   * After CSRF, so a refused cross-origin write doesn't use up the real client's budget.
+   * `request.ip` honours TRUST_PROXY: behind a trusted proxy it is the forwarded client.
+   */
+  private async enforceIpLimits(
+    context: ExecutionContext,
+    request: FastifyRequest,
+  ): Promise<void> {
+    for (const policy of getRouteRateLimits(context.getHandler()).ip) {
+      await this.limiter.enforce(policy, [request.ip]);
+    }
   }
 
   private handlerName(context: ExecutionContext): string {
