@@ -7,8 +7,8 @@ The order the assignment is being built in, and why. Update the status column as
 | C0. Foundation | 0 | | ✅ done (PR #1) |
 | C1. Part 1 schema | 1a | 1.0–1.2, 1.5, 1.6 | ✅ done |
 | C2. Error envelope | 1b | | ✅ done |
-| C3. Route declarations | 1b | 1.3 | ⏭ next |
-| C4. CSRF guard | 1b | 1.2, 1.3 | pending |
+| C3. Route declarations | 1b | 1.3 | ✅ done |
+| C4. CSRF guard | 1b | 1.2, 1.3 | ⏭ next |
 | C5. Throttling | 1b | | pending |
 | C6. MailService | 1b | | pending |
 | C7. Email challenge engine | 1c | 1.0, 1.2, 1.5, 1.6 | pending |
@@ -81,10 +81,7 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
 **Sequential.** These were deferred from Phase 0; see `docs/known-gaps.md`.
 
 1. ✅ **Error envelope** (C2, D18–D22): a global filter producing `{ statusCode, code, message, requestId }` plus safe extras; Postgres `23505` → `409`, an unavailable database → `503`.
-2. **Route declarations:**
-   - `@Public()`, `@RequirePermission(permission, action)`, `@Receipt(header)`
-   - a startup scan registered as a readiness check, failing readiness on a missing or conflicting declaration
-   - mark `/health/*` accordingly
+2. ✅ **Route declarations** (C3, D23–D26): `@Public()`, `@Internal()`, `@RequirePermission(permission, action)`, `@Receipt(header)`; a startup scan behind the `route_declarations` readiness check; a global guard that fails closed on protected routes until C11.
 3. **CSRF guard:** cross-origin writes need an exact `Origin` and `X-CSRF-Protection: 1`, otherwise `403 csrf_rejected`.
 4. **Throttling:** per-route, per-IP, per-email+IP and per-user limits, built on `@nestjs/throttler` with custom trackers.
 5. **MailService:** nodemailer transport with a 2 s timeout, OTP and magic-link templates, an `smtp` readiness check. Tests read mail through the Mailpit API.

@@ -9,6 +9,7 @@ import {
 import { ApiExcludeEndpoint, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
+import { Internal, Public } from '@/core/authorization/route-access';
 import { ConfigService } from '@/core/config/config.service';
 
 import { ReadinessReport, ReadinessRegistry } from './readiness.registry';
@@ -28,6 +29,7 @@ export class HealthController {
 
   /** Public liveness: the process is up. Touches no dependency, so a DB outage never restarts the container. */
   @Get('live')
+  @Public()
   @HttpCode(200)
   @ApiOkResponse({ schema: { example: { status: 'ok' } } })
   live(): { status: 'ok' } {
@@ -39,6 +41,7 @@ export class HealthController {
    * (READINESS_ALLOWED_IPS); everyone else gets 404, as if the route did not exist.
    */
   @Get('ready')
+  @Internal()
   @ApiExcludeEndpoint()
   async ready(
     @Req() req: FastifyRequest,

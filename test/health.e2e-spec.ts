@@ -35,7 +35,8 @@ describe('Health and bootstrap (e2e)', () => {
 
     expect(res.body).toEqual({
       status: 'ok',
-      checks: { database: 'up', config: 'up' },
+      // route_declarations: every route in the real app is declared (spec 1.3 §1.3.2).
+      checks: { database: 'up', config: 'up', route_declarations: 'up' },
     });
   });
 

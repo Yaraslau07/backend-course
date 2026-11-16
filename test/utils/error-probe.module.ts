@@ -18,6 +18,7 @@ import {
 } from 'class-validator';
 import { DataSource } from 'typeorm';
 
+import { Public } from '@/core/authorization/route-access';
 import { AppException } from '@/core/errors/app.exception';
 
 export const PROBE_SECRET = 'probe-secret-value-7f3a';
@@ -50,12 +51,14 @@ class ErrorProbeController {
   constructor(private readonly dataSource: DataSource) {}
 
   @Post('validate')
+  @Public()
   @HttpCode(200)
   validate(@Body() body: ProbeBody): { ok: true; count: number } {
     return { ok: true, count: body.count };
   }
 
   @Get('app-exception')
+  @Public()
   appException(): never {
     throw new AppException('too_many_requests', {
       retryAfterSeconds: 17,
@@ -64,16 +67,19 @@ class ErrorProbeController {
   }
 
   @Get('nest-exception')
+  @Public()
   nestException(): never {
     throw new ForbiddenException(`details with ${PROBE_SECRET}`);
   }
 
   @Get('unexpected')
+  @Public()
   unexpected(): never {
     throw new Error(`unexpected failure with ${PROBE_SECRET}`);
   }
 
   @Get('unique-violation')
+  @Public()
   async uniqueViolation(): Promise<never> {
     await this.dataSource.query(
       `DO $$ BEGIN RAISE EXCEPTION 'duplicate' USING ERRCODE = 'unique_violation', CONSTRAINT = 'uq_probe'; END $$`,
@@ -82,6 +88,7 @@ class ErrorProbeController {
   }
 
   @Get('statement-timeout')
+  @Public()
   async statementTimeout(): Promise<never> {
     await this.dataSource.transaction(async (manager) => {
       await manager.query(`SET LOCAL statement_timeout = 50`);
@@ -92,6 +99,7 @@ class ErrorProbeController {
 
   /** Postgres puts the offending value in the message: `invalid input value for enum …: "…"`. */
   @Get('db-error-with-value')
+  @Public()
   async dbErrorWithValue(): Promise<never> {
     await this.dataSource.query(`SELECT $1::user_status`, [PROBE_SECRET]);
     throw new Error('unreachable');
