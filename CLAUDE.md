@@ -24,9 +24,10 @@ npm run typecheck
 npm run lint
 npm test                    # unit tests
 npm run test:cov            # unit tests + 80% coverage gate
-npm run test:e2e            # needs `docker compose up -d`; uses .env.test and the app_test DB
+npm run test:e2e            # needs `docker compose up -d`; uses .env.test and the app_test DB; migrates it first
 npm run migration:generate  # needs a reachable DB; writes src/database/migrations/<ts>-Migration.ts
-npm run migration:run
+npm run migration:run       # the dev DB from .env; prefix NODE_ENV=test for app_test
+npm run migration:check     # fails if entities and the migrated DB differ (CI runs it)
 ```
 
 ## Hard rules
@@ -51,6 +52,10 @@ npm run migration:run
 - **New readiness checks:** inject `ReadinessRegistry` (global) and call `register(name, check)` in `onModuleInit`. Zero registered checks counts as not ready.
 - **Jest needs the alias mapper** (`moduleNameMapper` in `package.json` and `test/jest-e2e.json`). New path aliases must be added in both and in `tsconfig.json`.
 - **Migrations glob** is `src/database/migrations/*-*.{ts|js}` (only the current build's extension, because `dist/` also has `.d.ts`). Keep the CLI's `<timestamp>-<Name>` file naming.
+- **Entities** are `*.entity.ts` anywhere under `src/` (loaded by glob). Give every constraint and index an explicit name (`pk_`, `uq_`, `fk_`, `ck_`, `idx_` + table), because tests and the error filter match on names. Use relative imports inside entity files: the TypeORM CLI doesn't resolve `@/`.
+- **Generated migrations need a hand pass.** `migration:generate` emits a shared enum type (`challenge_method`, …) once per table that uses it, so the raw output fails on the second `CREATE TYPE`. Tidy the file, then prove it with `migration:run`, `migration:check`, `migration:revert`, `migration:run`.
+- **Timestamps are `timestamptz(3)`**: declare them with `timestamp()` / `timestampNow()` from `src/database/columns.ts`, never `@UpdateDateColumn` (D12). Set `updated_at = now()` in the write itself.
+- **E2E shares one persistent database** (`app_test`, which must be named `*_test` or the helpers refuse to connect). Rows other suites commit stay there, so use unique values (random or suite-specific domains) and never assert on global state such as the RBAC version.
 - **Graceful shutdown:** keep `enableShutdownHooks()` (in `configureApp`), and keep the Dockerfile running `node dist/main.js` under `tini`. npm doesn't forward SIGTERM.
 - **The husky pre-push hook runs typecheck and unit tests**; it fails if no `.spec.ts` exists.
 
@@ -58,6 +63,7 @@ npm run migration:run
 
 - `docs/roadmap.md`: the build order (phases, what's done, what's next, what can run in parallel). **Start here when picking up work**, and update its status table when a phase lands.
 - `docs/specs/`: the assignment, verbatim, one file per lesson.
+- `docs/schema.md`: every table, and which spec rule each constraint enforces.
 - `docs/invariants.md`: shared rules (statuses, lock order, challenge semantics, error codes, safe profile, logging, keys, cookies).
 - `docs/decisions.md`: why things are the way they are (D1, D2, …). Add an entry for every non-obvious choice.
 - `docs/known-gaps.md`: what's deliberately not done yet. Check it first and update it as gaps close.

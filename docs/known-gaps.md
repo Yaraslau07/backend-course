@@ -2,13 +2,12 @@
 
 A running list of what's still outstanding. Check it before assuming something is unhandled, and update it as gaps close or new ones appear. For the overall build order, see `docs/roadmap.md`.
 
-## Next: database schema (right after Phase 0)
-- No entities or migrations exist yet. Design the Part 1 schema in one initial migration:
-  - users (with the status enum and the deleted-state CHECK constraint)
-  - the four challenge tables, with partial unique indexes for "one outstanding per user"
-  - roles, permissions, permission_actions, grants, grant_actions, user_roles, rbac_policy_state
-  - deletion_jobs, storage_cleanup_jobs
-- `POSTGRES_MIGRATIONS_RUN=false` by default; CI runs `npm run migration:run` before e2e.
+## Database
+- The schema covers Part 1 only. Still to come, each with its own migration: rate-limit counters (C5), the list-search indexes on `users` (C12), `transformations` (C15).
+- `POSTGRES_MIGRATIONS_RUN=false` by default, so a deploy must run `npm run migration:run` (or set the flag) itself. CI and `npm run test:e2e` migrate their own database.
+- `grants.all_actions = true` should mean "no `grant_actions` rows". That spans two tables, so it's enforced by the RBAC service (C10), not by a constraint.
+- `ck_deletion_jobs_attempts` caps starts at 5. The deletion worker's claim (C14) must move an expired `running` job with 5 attempts to `failed`; a plain `attempts + 1` on it would violate the constraint.
+- No entity is registered with a Nest module yet (`TypeOrmModule.forFeature`); each feature does that when it first needs a repository.
 
 ## Phase 1 framework pieces (deliberately not in Phase 0)
 - **Route declarations:** `@Public()`, `@RequirePermission(permission, action)`, `@Receipt(header)`, plus a startup scan registered as a readiness check. Until then, **no route is protected**. When it lands, `GET /health/live` gets `@Public()` and `GET /health/ready` an internal marker.
@@ -20,8 +19,9 @@ A running list of what's still outstanding. Check it before assuming something i
 ## Infrastructure
 - No CD. The course only requires a service called through an HTTP client.
 - Readiness is gated by source IP, not a separate internal port (see D6).
-- The Docker smoke test in CI starts the container with a throwaway Postgres; it doesn't run migrations, since there are none yet.
+- The Docker smoke test in CI starts the container with a throwaway Postgres and `POSTGRES_MIGRATIONS_RUN=true`, then checks the schema exists.
 - `npm install` prints `install-scripts` warnings for packages whose postinstall was blocked by npm's allowlist (`unrs-resolver`). Harmless today. When native deps arrive (argon2, sharp), approve their scripts with `npm install-scripts approve <pkg>`, and check that the Dockerfile's `npm ci --ignore-scripts` still gets prebuilt binaries.
 
 ## Testing
 - `configure-app.ts` is covered only by e2e tests, not by unit coverage.
+- `*.entity.ts` files are excluded from unit coverage (D16). They are checked by `test/schema.e2e-spec.ts` and `migration:check` instead.
