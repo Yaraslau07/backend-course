@@ -11,7 +11,8 @@ A running list of what's still outstanding. Check it before assuming something i
 
 ## Phase 1 framework pieces (deliberately not in Phase 0)
 - **Protected routes fail closed** (D25): until the authorization chain lands in C11, every `@RequirePermission` route answers `503 authorization_unavailable`, and so does a receipt route called without its header.
-- **CSRF guard:** exact `Origin` plus `X-CSRF-Protection: 1` on cross-origin writes, `403 csrf_rejected`. CORS already allows the header.
+- **CSRF on protected routes** runs after identity, so it arrives with the chain in C11 (D28). Public writes are checked now.
+- **Cross-site cookies:** for a frontend on another site, both auth cookies need `SameSite=None; Secure` (spec 1.2). That is a cookie attribute, set where cookies are issued (C9).
 - **Throttling:** `@nestjs/throttler` is installed but not wired (see D11). This needs per-route limits and an email+IP failure counter, and `TRUST_PROXY` has to be set correctly wherever IP-based limits matter.
 - **MailService:** nodemailer transport with a 2 s timeout, templates, and an `smtp` readiness check.
 

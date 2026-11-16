@@ -82,3 +82,13 @@ Until C11 wires access → active user → CSRF → RBAC, the guard answers ever
 
 ## D26: A receipt-only route without its header is a 401 (2026-11-16)
 The spec defines a receipt route without the header only when it also has a pair ("the request follows the usual chain"). With no pair there is no other way to identify the caller, which is what `401 invalid_session` means. The one receipt route in the specs (`GET /users/{id}/deletion-status`) has a pair, so this only decides what a future misuse looks like.
+
+## D27: CSRF by Origin and a custom header, with no token (2026-11-16)
+Specs 1.2 and 1.3 define the check: a write from another origin needs that exact origin in `CORS_ORIGINS` and `X-CSRF-Protection: 1`, even when the origins are same-site. The header works because a browser can't add a custom header to a cross-origin request without a CORS preflight, which only listed origins pass. With `SameSite=Strict` cookies on top, no CSRF token is needed. How the edge cases are decided:
+- **Same-origin:** an `Origin` equal to the API's own (from `PUBLIC_API_BASE_URL`) passes without the header, which is the default deployment in the spec.
+- **No `Origin`:** the request comes from an HTTP client or curl, so it passes. Browsers send `Origin` on every cross-origin write. The exception is a browser that marks the request `Sec-Fetch-Site: cross-site` or `same-site` without an origin; it is refused.
+- **Exact match only:** `null`, a value with a path, a trailing dot or a second `Origin` header is refused. Matching is on the exact canonical origin a browser sends, never on a parsed or relaxed form.
+- **Logs:** a rejection logs `reason` and the handler, never the origin, because the origin is attacker-chosen text.
+
+## D28: Where CSRF runs in the chain (2026-11-16)
+Public and internal writes (login, registration, refresh, logout) are checked in the route guard, since they have no session step. A receipt route with its header is checked there too. Protected routes are checked **after** the session and active-user steps, which spec 1.3 orders as access → user → CSRF → RBAC: an unauthenticated cross-origin write is a `401`, not a `403`. That position is wired in C11, so today a protected write is still the fail-closed `503`.
