@@ -1,11 +1,19 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import { Module } from '@nestjs/common';
+import type { DestinationStream, Level } from 'pino';
 import { LoggerModule } from 'nestjs-pino';
 
 import { ConfigService } from '@/core/config/config.service';
 
 import { genReqId } from './request-id';
+
+/** Where logs go instead of stdout, and at which level. Tests override it to capture logs. */
+export interface LogSink {
+  level: Level;
+  stream: DestinationStream;
+}
+export const LOG_SINK = Symbol('LOG_SINK');
 
 /**
  * Paths pino replaces with "[Redacted]". This is a safety net: serializers below already log
