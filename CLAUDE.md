@@ -41,6 +41,7 @@ npm run migration:check     # fails if entities and the migrated DB differ (CI r
   - `.github/workflows/ci.yml`, if CI needs a non-default value (the Docker smoke job builds its own env)
 - **Secrets are base64url, ≥ 32 decoded bytes, and all different.** A new secret also goes into `SECRET_KEY_NAMES` and `scripts/generate-keys.mjs`. Never put a real key in a committed file. `.env.test` keys are test-only.
 - **Never log** the values listed under "Logging" in `docs/invariants.md`: emails, passwords, secrets, tokens, cookies, full URLs and query strings, bodies, headers, storage keys. Log ids, categories and counts.
+- **Errors go through `AppException(code, extras?)`** (`src/core/errors/`). The code fixes the status and the message; a new code goes into `ERROR_CATALOGUE`, a new extra into `ErrorExtras`. Never put a request value, a library message or a constraint name into a response (D18).
 - **Permission before lookup:** a protected handler never reads the target resource before RBAC allows it, so the answer is `403`, not `404`.
 
 ## Gotchas
@@ -55,6 +56,7 @@ npm run migration:check     # fails if entities and the migrated DB differ (CI r
 - **Entities** are `*.entity.ts` anywhere under `src/` (loaded by glob). Give every constraint and index an explicit name (`pk_`, `uq_`, `fk_`, `ck_`, `idx_` + table), because tests and the error filter match on names. Use relative imports inside entity files: the TypeORM CLI doesn't resolve `@/`.
 - **Generated migrations need a hand pass.** `migration:generate` emits a shared enum type (`challenge_method`, …) once per table that uses it, so the raw output fails on the second `CREATE TYPE`. Tidy the file, then prove it with `migration:run`, `migration:check`, `migration:revert`, `migration:run`.
 - **Timestamps are `timestamptz(3)`**: declare them with `timestamp()` / `timestampNow()` from `src/database/columns.ts`, never `@UpdateDateColumn` (D12). Set `updated_at = now()` in the write itself.
+- **Log-leak checks:** in an e2e file, create the app with `createTestApp({ logs: new LogCapture() })` once in `beforeAll`, and call `logs.expectNoLeaks(config, [values the test sent])` (D22). Test-only routes go in `test/utils/*-probe.module.ts`, passed via `imports`.
 - **E2E shares one persistent database** (`app_test`, which must be named `*_test` or the helpers refuse to connect). Rows other suites commit stay there, so use unique values (random or suite-specific domains) and never assert on global state such as the RBAC version.
 - **Graceful shutdown:** keep `enableShutdownHooks()` (in `configureApp`), and keep the Dockerfile running `node dist/main.js` under `tini`. npm doesn't forward SIGTERM.
 - **The husky pre-push hook runs typecheck and unit tests**; it fails if no `.spec.ts` exists.

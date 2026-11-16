@@ -65,7 +65,22 @@ access cookie → current user is `active` → CSRF (cross-origin writes) → RB
 | 409 | `file_not_ready` | download while `storageStatus=pending` |
 | 503 | `authorization_unavailable` | user DB, RBAC snapshot or route config unavailable |
 
-Error body shape: `{ statusCode, code, message, requestId }`, plus spec-mandated safe extras (`retryAfterSeconds`, `attemptId`, `method`, …). This arrives in Phase 1.
+Generic codes, used when nothing more specific applies:
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `bad_request`, `validation_failed`, `invalid_json` | malformed request; failed DTO validation (with `errors: [{ field, rules }]`); unparsable JSON |
+| 401 | `invalid_session` | also any stray 401 |
+| 403 | `forbidden` | a plain 403 that isn't one of the specific ones |
+| 404 | `not_found` | missing resource or route |
+| 409 | `conflict` | includes an unhandled unique violation (`23505`) |
+| 413, 415 | `payload_too_large`, `unsupported_media_type` | |
+| 429 | `too_many_requests` | sets `Retry-After` when `retryAfterSeconds` is given |
+| 500 | `internal_error` | anything unexpected |
+| 503 | `service_unavailable` | database unreachable, timed out, deadlocked or shutting down |
+| 504 | `gateway_timeout` | a conversion ran out of time (Part 2) |
+
+Error body shape: `{ statusCode, code, message, requestId }`, plus spec-mandated safe extras (`retryAfterSeconds`, `confirmationRequired`, `method`, `attemptId`, `challengeId`, `errors`). The full list lives in `src/core/errors/error-catalogue.ts`; the allowed extras are the `ErrorExtras` type. Throw `new AppException(code, extras?)`; the code fixes the status.
 
 ## Canonical safe profile (7 fields, always this shape)
 

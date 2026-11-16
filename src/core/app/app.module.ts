@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { ConfigModule } from '@/core/config/config.module';
 import { DatabaseModule } from '@/core/database/database.module';
+import { ErrorsModule } from '@/core/errors/errors.module';
 import { HealthModule } from '@/core/health/health.module';
 import { LoggingModule } from '@/core/logging/logging.module';
 
@@ -14,6 +15,7 @@ import { UsersModule } from '@/modules/users/users.module';
   imports: [
     ConfigModule,
     LoggingModule,
+    ErrorsModule,
     DatabaseModule,
     HealthModule,
     /**

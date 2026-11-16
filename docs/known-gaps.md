@@ -11,7 +11,6 @@ A running list of what's still outstanding. Check it before assuming something i
 
 ## Phase 1 framework pieces (deliberately not in Phase 0)
 - **Route declarations:** `@Public()`, `@RequirePermission(permission, action)`, `@Receipt(header)`, plus a startup scan registered as a readiness check. Until then, **no route is protected**. When it lands, `GET /health/live` gets `@Public()` and `GET /health/ready` an internal marker.
-- **Error envelope:** a global filter producing `{ statusCode, code, message, requestId }` and mapping Postgres `23505` to `409`. Today errors use Nest's default body.
 - **CSRF guard:** exact `Origin` plus `X-CSRF-Protection: 1` on cross-origin writes, `403 csrf_rejected`. CORS already allows the header.
 - **Throttling:** `@nestjs/throttler` is installed but not wired (see D11). This needs per-route limits and an email+IP failure counter, and `TRUST_PROXY` has to be set correctly wherever IP-based limits matter.
 - **MailService:** nodemailer transport with a 2 s timeout, templates, and an `smtp` readiness check.
@@ -21,6 +20,11 @@ A running list of what's still outstanding. Check it before assuming something i
 - Readiness is gated by source IP, not a separate internal port (see D6).
 - The Docker smoke test in CI starts the container with a throwaway Postgres and `POSTGRES_MIGRATIONS_RUN=true`, then checks the schema exists.
 - `npm install` prints `install-scripts` warnings for packages whose postinstall was blocked by npm's allowlist (`unrs-resolver`). Harmless today. When native deps arrive (argon2, sharp), approve their scripts with `npm install-scripts approve <pkg>`, and check that the Dockerfile's `npm ci --ignore-scripts` still gets prebuilt binaries.
+
+## Errors
+- The pg pool has no `connectionTimeoutMillis`, so with Postgres unreachable but not refusing connections (a dropped network rather than a stopped server), a query can wait on the OS timeout instead of failing fast as a 503. To set in C9, where "DB down → 503, not 401" is tested.
+- A body sent to a route that doesn't exist is still parsed first, so malformed JSON to a missing route answers `400 invalid_json`, not `404`.
+- `text/plain` bodies are still accepted by Fastify's built-in parser and then fail DTO validation (`400`), rather than being refused with `415`.
 
 ## Testing
 - `configure-app.ts` is covered only by e2e tests, not by unit coverage.

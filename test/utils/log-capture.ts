@@ -47,7 +47,10 @@ export class LogCapture {
     const secrets = [
       ...SECRET_KEY_NAMES.map((name) => config[name]),
       ...config.USER_LIST_CURSOR_HMAC_KEYS.map((entry) => entry.key),
-      config.POSTGRES_PASSWORD,
+      // A short password like the test DB's "postgres" also appears in stack paths; only check real ones.
+      ...(config.POSTGRES_PASSWORD.length >= 12
+        ? [config.POSTGRES_PASSWORD]
+        : []),
     ];
     const text = this.text();
     for (const value of [...secrets, ...values]) {

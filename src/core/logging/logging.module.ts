@@ -51,27 +51,27 @@ export function serializeResponse(res: ServerResponse) {
 @Module({
   imports: [
     LoggerModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => {
+      inject: [ConfigService, LOG_SINK],
+      providers: [{ provide: LOG_SINK, useValue: null }],
+      useFactory: (config: ConfigService, sink: LogSink | null) => {
         const env = config.get('NODE_ENV');
-        return {
-          pinoHttp: {
-            level: env === 'test' ? 'silent' : 'info',
-            // Fastify has already assigned the id (createAdapter); reuse it so logs and X-Request-Id match.
-            genReqId: (req: IncomingMessage & { id?: string }) =>
-              req.id ?? genReqId(req),
-            redact: { paths: REDACT_PATHS },
-            serializers: {
-              req: serializeRequest,
-              res: serializeResponse,
-            },
-            customProps: () => ({ service: 'backend-course' }),
-            transport:
-              env === 'development'
-                ? { target: 'pino-pretty', options: { singleLine: true } }
-                : undefined,
+        const options = {
+          level: sink?.level ?? (env === 'test' ? 'silent' : 'info'),
+          // Fastify has already assigned the id (createAdapter); reuse it so logs and X-Request-Id match.
+          genReqId: (req: IncomingMessage & { id?: string }) =>
+            req.id ?? genReqId(req),
+          redact: { paths: REDACT_PATHS },
+          serializers: {
+            req: serializeRequest,
+            res: serializeResponse,
           },
+          customProps: () => ({ service: 'backend-course' }),
+          transport:
+            env === 'development' && !sink
+              ? { target: 'pino-pretty', options: { singleLine: true } }
+              : undefined,
         };
+        return { pinoHttp: sink ? [options, sink.stream] : options };
       },
     }),
   ],

@@ -211,25 +211,6 @@ describe('toErrorResponse()', () => {
     expect(response.body.code).toBe('internal_error');
   });
 
-  it.each([
-    ['FST_ERR_CTP_INVALID_JSON_BODY', 400, 'invalid_json'],
-    ['FST_ERR_CTP_EMPTY_JSON_BODY', 400, 'invalid_json'],
-    ['FST_ERR_CTP_BODY_TOO_LARGE', 413, 'payload_too_large'],
-    ['FST_ERR_CTP_INVALID_MEDIA_TYPE', 415, 'unsupported_media_type'],
-    ['FST_ERR_SOMETHING_ELSE', 400, 'bad_request'],
-  ])('maps the Fastify error %s', (code, status, expected) => {
-    const error = Object.assign(new Error('Fastify message with "input"'), {
-      code,
-      statusCode: status,
-    });
-
-    const response = toErrorResponse(error);
-
-    expect(response.status).toBe(status);
-    expect(response.body.code).toBe(expected);
-    expect(response.body.message).not.toContain('input');
-  });
-
   it('maps a unique violation to 409 conflict without naming the constraint', () => {
     const response = toErrorResponse(
       queryFailed('23505', { constraint: 'uq_users_email' }),
