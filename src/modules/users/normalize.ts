@@ -1,4 +1,7 @@
-/* eslint-disable @typescript-eslint/no-unused-vars -- stub, replaced by the implementation commit */
-export function normalizeEmail(_value: unknown): unknown {
-  throw new Error('not implemented');
+/** Spec 1.0: an email is compared and stored trimmed and lowercased; `+tag` is kept. */
+export const EMAIL_MAX_LENGTH = 254;
+
+/** Trim and lowercase a string; anything else is returned as is, so validation can report it. */
+export function normalizeEmail(value: unknown): unknown {
+  return typeof value === 'string' ? value.trim().toLowerCase() : value;
 }

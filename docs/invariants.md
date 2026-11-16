@@ -67,6 +67,7 @@ access cookie → current user is `active` → CSRF (cross-origin writes) → RB
 | 403 | `self_confirmation_required` | admin `DELETE /users/{own id}` |
 | 400 | `invalid_cursor` | any cursor problem, no details |
 | 400 | `invalid_challenge` | challenge not found, expired, wrong secret, replaced, confirmed or consumed as `user_inactive` |
+| 409 | `email_taken` | registration of an email that exists, `pending` included |
 | 409 | `challenge_conflict` | challenge consumed as `admin_override`, `email_conflict` or `job_exists` |
 | 429 | `attempts_exhausted` | the 5th wrong OTP already consumed the challenge |
 | 429 | `resend_cooldown` | a new email within 60 s of the last send (`retryAfterSeconds`) |

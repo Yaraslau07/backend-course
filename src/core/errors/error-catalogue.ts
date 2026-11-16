@@ -49,6 +49,10 @@ export const ERROR_CATALOGUE = {
     message: 'The request conflicts with the current state.',
   },
   file_not_ready: { status: 409, message: 'The file is not ready yet.' },
+  email_taken: {
+    status: 409,
+    message: 'This email is already registered.',
+  },
   challenge_conflict: {
     status: 409,
     message: 'This confirmation is no longer valid.',

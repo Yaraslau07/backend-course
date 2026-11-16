@@ -343,6 +343,61 @@ describe('ChallengeEngine decisions', () => {
     });
   });
 
+  describe('issue() with cooldownFromLatest', () => {
+    it('refuses while the latest challenge, even a consumed one, is within the cooldown', async () => {
+      const { manager } = managerWith(undefined);
+      jest.spyOn(engine, 'latest').mockResolvedValue({
+        id: ID,
+        method: 'otp',
+        outstanding: false,
+        age: 20,
+      });
+
+      expect(
+        await engine.issue(manager, 'registration', {
+          userId: USER,
+          method: 'otp',
+          cooldownFromLatest: true,
+        }),
+      ).toMatchObject({ ok: false, error: { code: 'resend_cooldown' } });
+    });
+
+    it('issues once the latest challenge is older than the cooldown', async () => {
+      const { manager } = managerWith(undefined);
+      jest.spyOn(engine, 'latest').mockResolvedValue({
+        id: ID,
+        method: 'otp',
+        outstanding: false,
+        age: 61,
+      });
+
+      expect(
+        await engine.issue(manager, 'registration', {
+          userId: USER,
+          method: 'otp',
+          cooldownFromLatest: true,
+        }),
+      ).toMatchObject({ ok: true });
+    });
+  });
+
+  describe('latest()', () => {
+    it('returns the newest challenge or null', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce([
+          { id: ID, method: 'otp', outstanding: true, age: 3 },
+        ])
+        .mockResolvedValueOnce([]);
+      const manager = { query } as unknown as EntityManager;
+
+      expect(await engine.latest(manager, 'registration', USER)).toMatchObject({
+        id: ID,
+      });
+      expect(await engine.latest(manager, 'registration', USER)).toBeNull();
+    });
+  });
+
   describe('resend()', () => {
     const input = { challengeId: ID, userId: USER, userEligible: true };
 

@@ -1,0 +1,55 @@
+# Registration (spec 1.0). Pick the `dev` environment; read the mail at http://localhost:8025.
+# With REGISTRATION_EMAIL_CONFIRMATION_ENABLED=false the first request answers 201 and you are done.
+# Otherwise it answers 202 with an attemptId: copy it and the code (or the link's #token=…) from Mailpit.
+
+### Register: 201 (active) or 202 (confirmation required)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "someone+1@example.com",
+  "password": "correct horse 1"
+}
+
+### Register the same email again: 409 email_taken
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "  Someone+1@Example.com ",
+  "password": "another one 2"
+}
+
+### Confirm with the OTP from the email
+POST {{baseUrl}}/auth/register/confirm
+Content-Type: application/json
+
+{
+  "attemptId": "<attemptId from the 202>",
+  "code": "<6 digits from the email>"
+}
+
+### Confirm with a magic link (REGISTRATION_EMAIL_CONFIRMATION_METHOD=magic_link)
+POST {{baseUrl}}/auth/register/confirm
+Content-Type: application/json
+
+{
+  "token": "<the value after #token= in the link>"
+}
+
+### Resend the email: 429 within 60 s of the last one, then 202
+POST {{baseUrl}}/auth/register/resend
+Content-Type: application/json
+
+{
+  "email": "someone+1@example.com"
+}
+
+### A weak password: 400 validation_failed with the failing rules
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "weak@example.com",
+  "password": "short"
+}
