@@ -147,7 +147,7 @@ describe('Route declarations (e2e)', () => {
       });
     });
 
-    it('lets a public write through (CSRF arrives in C4)', async () => {
+    it('lets a same-origin or non-browser public write through', async () => {
       await http()
         .post('/__routes/public')
         .expect(201, { ran: 'public-write' });

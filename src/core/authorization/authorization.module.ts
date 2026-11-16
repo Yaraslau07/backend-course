@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD, DiscoveryModule } from '@nestjs/core';
 
+import { CsrfPolicy } from './csrf';
 import { RouteAccessGuard } from './route-access.guard';
 import { RouteDeclarationScanner } from './route-scan';
 
 @Module({
   imports: [DiscoveryModule],
   providers: [
+    CsrfPolicy,
     RouteDeclarationScanner,
     { provide: APP_GUARD, useClass: RouteAccessGuard },
   ],

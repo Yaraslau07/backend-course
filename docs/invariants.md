@@ -49,6 +49,7 @@ access cookie → current user is `active` → CSRF (cross-origin writes) → RB
 
 - Every route declares one of: `@Public()`; `@Internal()` (readiness only); exactly one `@RequirePermission(permission, action)`; `@Receipt(header)`, optionally with one pair. A missing or conflicting declaration, or a name that fails the RBAC pattern, fails readiness (`route_declarations`), and the route answers `503 authorization_unavailable` without running (D23, D24).
 - A receipt route with the header present runs the handler, which checks the receipt; the cookie is not read. Without the header it follows the pair's chain, or answers `401 invalid_session` if it has no pair (D26).
+- CSRF (D27, D28): a write (`POST`, `PUT`, `PATCH`, `DELETE`) with an `Origin` other than the API's own needs that exact origin in `CORS_ORIGINS` and `X-CSRF-Protection: 1`, else `403 csrf_rejected`. No `Origin` passes (not a browser) unless `Sec-Fetch-Site` is `cross-site` or `same-site`. Public writes are checked in the route guard; protected ones after the active-user step.
 - The permission check comes **before** looking up the target. Without the right you get `403`, never `404`.
 - Roles in a JWT, body, query or header are ignored. RBAC reads the current snapshot; if the snapshot version is stale or it is unavailable, return `503 authorization_unavailable`.
 

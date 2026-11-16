@@ -8,31 +8,39 @@ import type { FastifyRequest } from 'fastify';
 
 import { AppException } from '@/core/errors/app.exception';
 
+import { CsrfPolicy } from './csrf';
 import { getRouteAccess } from './route-access';
 
 /**
  * The first step of every request (registered globally). It reads the route's declaration and
- * decides which branch applies. Until the authorization chain lands (C11), the protected branch
+ * decides which branch applies, checking CSRF on writes that don't go through the session chain. Until the authorization chain lands (C11), the protected branch
  * fails closed: no handler that needs a permission can run before RBAC exists.
  */
 @Injectable()
 export class RouteAccessGuard implements CanActivate {
   private readonly logger = new Logger('Authorization');
 
+  constructor(private readonly csrf: CsrfPolicy) {}
+
   canActivate(context: ExecutionContext): boolean {
     if (context.getType() !== 'http') return true;
 
     const access = getRouteAccess(context.getHandler());
+    const request = context.switchToHttp().getRequest<FastifyRequest>();
     switch (access.kind) {
       case 'public':
       case 'internal':
+        // Public writes (login, registration, refresh, logout) are CSRF-checked too (spec 1.2).
+        this.csrf.assert(request, this.handlerName(context));
         return true;
 
       case 'receipt': {
-        const request = context.switchToHttp().getRequest<FastifyRequest>();
         const value = request.headers[access.header];
         // With the header, the handler verifies the receipt; the cookie is not read at all.
-        if (typeof value === 'string' && value.length > 0) return true;
+        if (typeof value === 'string' && value.length > 0) {
+          this.csrf.assert(request, this.handlerName(context));
+          return true;
+        }
         // Without it, a receipt-only route has no other way to know the caller.
         if (!access.pair) throw new AppException('invalid_session');
         return this.protectedChain(context);
@@ -54,7 +62,10 @@ export class RouteAccessGuard implements CanActivate {
     }
   }
 
-  /** Replaced by access → active user → CSRF → RBAC in C11. */
+  /**
+   * Replaced by access → active user → CSRF → RBAC in C11. CSRF belongs after identity there
+   * (spec 1.3 step 5), so it is deliberately not checked here.
+   */
   private protectedChain(context: ExecutionContext): never {
     this.logger.warn(
       {
