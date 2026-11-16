@@ -94,8 +94,9 @@ export function toErrorResponse(exception: unknown): ErrorResponse {
         log: { level: 'error', fields: { errorType: exception.name } },
       };
     }
+    // Any other 4xx becomes a plain 400, so a code always means one status (D37).
     const code = STATUS_TO_CODE[status] ?? 'bad_request';
-    return { ...build(code, status), log: { level: 'none', fields: {} } };
+    return { ...build(code), log: { level: 'none', fields: {} } };
   }
 
   // 3. Database errors.

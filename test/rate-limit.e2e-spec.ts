@@ -66,6 +66,14 @@ describe('Rate limiting (e2e)', () => {
     );
   }
 
+  async function expiresAt(policy: RateLimitPolicyName, parts: string[]) {
+    const [row] = await db.query<{ expires_at: Date }[]>(
+      `SELECT expires_at FROM rate_limits WHERE bucket = $1 AND key = $2`,
+      [policy, rateLimitKey(config.RATE_LIMIT_KEY_HMAC_KEY, policy, parts)],
+    );
+    return row.expires_at;
+  }
+
   async function consumeTimes(
     policy: RateLimitPolicyName,
     parts: string[],
@@ -164,36 +172,60 @@ describe('Rate limiting (e2e)', () => {
     });
   });
 
-  describe('peek() and record(): limits that count only failures', () => {
-    it('peek reports the state without adding a hit; record adds one unconditionally', async () => {
+  describe('consume() + release(): limits that count only failures', () => {
+    it('lets at most the limit of concurrent attempts through, then gives back the slots of successes', async () => {
       const key = ['probe-user@example.com', randomUUID()];
 
-      for (let i = 0; i < 5; i++) {
-        expect((await limiter.peek('login_failures', key)).allowed).toBe(true);
-        await limiter.record('login_failures', key);
-      }
+      // 50 password checks at once: only 5 may run, whatever their outcome.
+      const attempts = await Promise.all(
+        Array.from({ length: 50 }, () =>
+          limiter.consume('login_failures', key),
+        ),
+      );
+      expect(attempts.filter((r) => r.allowed)).toHaveLength(5);
 
-      const state = await limiter.peek('login_failures', key);
-      expect(state.allowed).toBe(false);
-      expect(state.retryAfterSeconds).toBeGreaterThan(890);
-      expect((await limiter.peek('login_failures', key)).allowed).toBe(false);
+      // Two of the five succeeded: their slots come back, so two more attempts may run.
+      await limiter.release('login_failures', key);
+      await limiter.release('login_failures', key);
+      const next = await consumeTimes('login_failures', key, 3);
+      expect(next.map((r) => r.allowed)).toEqual([true, true, false]);
+      expect(next[2].retryAfterSeconds).toBeGreaterThan(890);
 
       await age('login_failures', key, 901);
-      expect((await limiter.peek('login_failures', key)).allowed).toBe(true);
+      expect((await limiter.consume('login_failures', key)).allowed).toBe(true);
     });
 
-    it('peek on a key never seen is allowed and creates nothing', async () => {
+    it('release on a key never seen does nothing', async () => {
       const key = freshKey();
+
+      await limiter.release('login_failures', key);
 
       expect(await limiter.peek('login_failures', key)).toEqual({
         allowed: true,
         retryAfterSeconds: 0,
       });
-      const [{ count }] = await db.query<{ count: string }[]>(
-        `SELECT count(*) FROM rate_limits WHERE key = $1`,
-        [rateLimitKey(config.RATE_LIMIT_KEY_HMAC_KEY, 'login_failures', key)],
-      );
-      expect(count).toBe('0');
+    });
+
+    it('peek reports the state without adding a hit', async () => {
+      const key = freshKey();
+      await consumeTimes('login_failures', key, 5);
+
+      expect((await limiter.peek('login_failures', key)).allowed).toBe(false);
+      await limiter.release('login_failures', key);
+      expect((await limiter.peek('login_failures', key)).allowed).toBe(true);
+      expect((await limiter.peek('login_failures', key)).allowed).toBe(true);
+    });
+  });
+
+  describe('expiry', () => {
+    it('a refused request does not push the expiry beyond the newest stored hit', async () => {
+      const key = freshKey();
+      await consumeTimes('login_ip', key, 30);
+      const before = await expiresAt('login_ip', key);
+
+      await consumeTimes('login_ip', key, 5); // all refused
+
+      expect(await expiresAt('login_ip', key)).toEqual(before);
     });
   });
 

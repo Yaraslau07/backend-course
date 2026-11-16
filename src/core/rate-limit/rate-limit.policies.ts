@@ -1,14 +1,17 @@
 import type { AppConfig } from '@/core/config/config.types';
 
+/** The typed config accessor (`ConfigService.get`), so a policy can read its limit from config. */
+export type ConfigGetter = <K extends keyof AppConfig>(key: K) => AppConfig[K];
+
 export interface RateLimitPolicy {
   /**
    * What the counter is keyed by. `ip` and `user` policies are declared on routes with
    * `@RateLimit()` and applied by the route guard; `custom` ones are applied in code, because
-   * their key or their moment needs the handler (email + IP, failures only, emails sent, self vs foreign).
+   * their key or their moment needs the handler (email + IP with release on success, emails sent, self vs foreign).
    */
   by: 'ip' | 'user' | 'custom';
   /** At most this many hits in any window of `windowSeconds` (a sliding window, D29). */
-  limit: number | ((config: AppConfig) => number);
+  limit: number | ((get: ConfigGetter) => number);
   windowSeconds: number;
   /** Where the number comes from. */
   spec: string;
@@ -18,13 +21,13 @@ export interface RateLimitPolicy {
 export const RATE_LIMIT_POLICIES = {
   registration_ip: {
     by: 'ip',
-    limit: (config) => config.REGISTRATION_RATE_LIMIT_PER_HOUR,
+    limit: (get) => get('REGISTRATION_RATE_LIMIT_PER_HOUR'),
     windowSeconds: 3600,
     spec: '1.0 §1.6: rate limit for registration, threshold from config',
   },
   registration_resend_ip: {
     by: 'ip',
-    limit: (config) => config.REGISTRATION_RATE_LIMIT_PER_HOUR,
+    limit: (get) => get('REGISTRATION_RATE_LIMIT_PER_HOUR'),
     windowSeconds: 3600,
     spec: '1.0 §1.6: and for resending (same threshold, D30)',
   },
@@ -113,9 +116,7 @@ export type RateLimitName = {
 
 export function policyLimit(
   policy: RateLimitPolicy,
-  config: AppConfig,
+  get: ConfigGetter,
 ): number {
-  return typeof policy.limit === 'function'
-    ? policy.limit(config)
-    : policy.limit;
+  return typeof policy.limit === 'function' ? policy.limit(get) : policy.limit;
 }

@@ -52,6 +52,23 @@ describe('RateLimiter', () => {
     });
   });
 
+  it('release removes the newest hit of that key only', async () => {
+    const { limiter, query } = limiterWith([]);
+
+    await limiter.release('login_failures', [
+      'user@example.com',
+      '203.0.113.9',
+    ]);
+
+    expect(query.mock.calls[0][1]).toEqual([
+      'login_failures',
+      rateLimitKey(SECRET, 'login_failures', [
+        'user@example.com',
+        '203.0.113.9',
+      ]),
+    ]);
+  });
+
   it('peek on a missing row is allowed', async () => {
     const { limiter } = limiterWith([]);
 

@@ -116,3 +116,25 @@ All policies are in one table (`RATE_LIMIT_POLICIES`, each citing its spec secti
   - own vs. someone else's profile: decided after comparing ids.
 
   `peek()`/`record()` can let a few extra failures through when several arrive at the same instant. That is accepted, because the alternative (reserving a slot before checking the password) would count successes too.
+
+## D33: Mail is sent inside the request, with a hard 2 s limit (2026-11-16)
+Every challenge flow commits first, then sends, and must answer `503` with the challenge kept when SMTP fails (specs 1.0, 1.2, 1.5, 1.6). So the send happens inside the request, and it has to fail fast. `MailService` bounds the whole send to `MAIL_TIMEOUT_MS` (2 s): nodemailer's own connection, greeting and socket timeouts, plus an outer timer for anything they don't cover. A failure throws `MailUnavailableError`, an `AppException('service_unavailable')`, so an uncaught one is already a correct 503. Flows catch it to add `confirmationRequired`, `method`, the challenge id and `retryAfterSeconds`. If the outer timer fires while the server is still accepting, the mail may arrive after we answered 503. That is harmless: the challenge was kept, and resend replaces the secret.
+
+## D34: What mail code may log, and how the transport is locked down (2026-11-16)
+A mail log line carries the template name (`login_otp`, …), the outcome, a failure category (our `timeout`, or the transport's code such as `ECONNECTION` or `EAUTH`) and the duration. Never the recipient, subject, body or transport message: SMTP errors quote addresses and server responses (`550 <user@…> unknown`). nodemailer's own logger is off, and file and URL access are disabled, since messages only come from our templates. In production STARTTLS is required unless `SMTP_SECURE` is on, so a code never crosses the network in clear text. Readiness has an `smtp` check (`verify()`), so a misconfigured server is visible before the first registration fails.
+
+## D35: Magic links point at frontend pages, with the token in the fragment (2026-11-16)
+A link is `FRONTEND_URL + <path> + #token=<token>`, with one path per scenario (`/auth/register/confirm`, `/auth/login/confirm`, `/account/email/confirm`, `/account/deletion/confirm`). The fragment is never sent to any server, so the token can't land in access logs, proxies or a `Referer` header. Opening the page changes nothing; it POSTs the token to the API (specs 1.0, 1.2). There is no frontend in this project, so the paths are the contract a frontend would implement. In an HTTP client you copy the token from the mail in Mailpit.
+
+## D36: nodemailer 10.3.1, pinned (2026-11-16)
+The latest release (10.6.0) was a day old when this was written. 10.3.1 is the newest one that had been out for two weeks, a buffer against a compromised or broken release. It ships its own types, so there is no `@types/nodemailer`. Upgrade deliberately, not through a caret range.
+
+## D37: Phase 1b review fixes (2026-11-16, amends D18, D21, D24, D32, D34)
+From the `/code-review` of C2–C6:
+- **Failure-only limits reserve, then release** (amends D32). `peek()` then `record()` let 50 concurrent wrong passwords all reach the password check. Now `consume()` takes a slot atomically *before* the check, and `release()` gives it back on success. At most 5 checks per email and IP can be in flight or failed within 15 minutes; `record()` is gone.
+- **SMTP is a non-critical readiness check** (amends D34). An SMTP outage marked every instance not ready, which would take logins, profiles and lists down with mail. Readiness checks can now be registered with `critical: false`: they are reported but don't change `status`. Only the challenge flows need SMTP, and they answer 503 themselves. The check result is also cached for 30 s, so probes don't open an SMTP connection each time.
+- **A code always means one status** (amends D18). An HttpException with an unmapped 4xx used to keep its status but be called `bad_request`. Now 405, 408 and 422 have their own codes, and any other 4xx becomes a plain `400 bad_request`.
+- **Form-encoded bodies are refused** (amends D21). Registering our JSON parser also stops Nest from installing its `application/x-www-form-urlencoded` parser, so such bodies get `415`. That is intended: this is a JSON API, and HTML forms are the classic CSRF vector.
+- **The route scan follows inheritance** (amends D24). A handler inherited from a base controller is now scanned too, so it can't take traffic undeclared.
+- **Counter rows:** `expires_at` is now always the newest stored hit plus the window (a refusal no longer pushes it), and `consume()` evaluates the live hits once.
+- **Still open, by design:** IP- and user-keyed limits on protected routes are enforced only once the chain exists (C11); until then those routes refuse every request.

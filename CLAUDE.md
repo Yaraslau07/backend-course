@@ -44,7 +44,8 @@ npm run migration:check     # fails if entities and the migrated DB differ (CI r
 - **Errors go through `AppException(code, extras?)`** (`src/core/errors/`). The code fixes the status and the message; a new code goes into `ERROR_CATALOGUE`, a new extra into `ErrorExtras`. Never put a request value, a library message or a constraint name into a response (D18).
 - **Every route needs an access declaration** (`src/core/authorization/route-access.ts`): `@Public()`, `@Internal()`, one `@RequirePermission(permission, action)`, or `@Receipt(header)` with at most one pair. Without one, readiness fails and the route answers 503. Test-only probe routes need one too.
 - **CSRF is in the guard** (`src/core/authorization/csrf.ts`), never in a handler. Don't add a second check, and don't skip it for "safe" writes; if a write must be callable cross-origin, its origin goes into `CORS_ORIGINS`.
-- **Rate limits come from `RATE_LIMIT_POLICIES`** (`src/core/rate-limit/`); never write a number in a feature. Routes use `@RateLimit(name)` (IP-keyed anywhere, user-keyed only on `@RequirePermission` routes); custom limits call `RateLimiter.consume()` / `peek()` / `record()` / `enforce()`. E2E suites that hit limited routes call `resetRateLimits(app)` in `beforeAll`, because the counters persist in `app_test`.
+- **Rate limits come from `RATE_LIMIT_POLICIES`** (`src/core/rate-limit/`); never write a number in a feature. Routes use `@RateLimit(name)` (IP-keyed anywhere, user-keyed only on `@RequirePermission` routes); custom limits call `RateLimiter.consume()` / `release()` / `peek()` / `enforce()` (failure-only: `consume()` before the attempt, `release()` on success). E2E suites that hit limited routes call `resetRateLimits(app)` in `beforeAll`, because the counters persist in `app_test`.
+- **Mail goes through `MailService`** (`src/core/mail/`), never a transport of your own. It throws `MailUnavailableError` (a 503) on failure and logs only the template name; don't log the recipient yourself either.
 - **Permission before lookup:** a protected handler never reads the target resource before RBAC allows it, so the answer is `403`, not `404`.
 
 ## Gotchas
@@ -53,13 +54,14 @@ npm run migration:check     # fails if entities and the migrated DB differ (CI r
 - **`configureApp()` (`src/core/app/configure-app.ts`) is shared by `main.ts` and `test/utils/create-test-app.ts`.** Add app-wide setup there, not in `main.ts`, or e2e tests stop matching production.
 - **Request ids come from Fastify's `genReqId`** (`src/core/logging/request-id.ts`). pino-http reuses `req.raw.id`; the `onSend` hook echoes `X-Request-Id`.
 - **Readiness (`/health/ready`) is IP-gated** to `READINESS_ALLOWED_IPS` (loopback by default) and gives `404` to everyone else. Liveness (`/health/live`) touches nothing. The Dockerfile `HEALTHCHECK` and the CI smoke test use these paths; rename them together.
-- **New readiness checks:** inject `ReadinessRegistry` (global) and call `register(name, check)` in `onModuleInit`. Zero registered checks counts as not ready.
+- **New readiness checks:** inject `ReadinessRegistry` (global) and call `register(name, check)` in `onModuleInit`. Pass `{ critical: false }` for a dependency only some requests need (SMTP): it is reported but doesn't fail readiness. Zero critical checks counts as not ready.
 - **Jest needs the alias mapper** (`moduleNameMapper` in `package.json` and `test/jest-e2e.json`). New path aliases must be added in both and in `tsconfig.json`.
 - **Migrations glob** is `src/database/migrations/*-*.{ts|js}` (only the current build's extension, because `dist/` also has `.d.ts`). Keep the CLI's `<timestamp>-<Name>` file naming.
 - **Entities** are `*.entity.ts` anywhere under `src/` (loaded by glob). Give every constraint and index an explicit name (`pk_`, `uq_`, `fk_`, `ck_`, `idx_` + table), because tests and the error filter match on names. Use relative imports inside entity files: the TypeORM CLI doesn't resolve `@/`.
 - **Generated migrations need a hand pass.** `migration:generate` emits a shared enum type (`challenge_method`, …) once per table that uses it, so the raw output fails on the second `CREATE TYPE`. Tidy the file, then prove it with `migration:run`, `migration:check`, `migration:revert`, `migration:run`.
 - **Timestamps are `timestamptz(3)`**: declare them with `timestamp()` / `timestampNow()` from `src/database/columns.ts`, never `@UpdateDateColumn` (D12). Set `updated_at = now()` in the write itself.
 - **Log-leak checks:** in an e2e file, create the app with `createTestApp({ logs: new LogCapture() })` once in `beforeAll`, and call `logs.expectNoLeaks(config, [values the test sent])` (D22). Test-only routes go in `test/utils/*-probe.module.ts`, passed via `imports`.
+- **Per-app config in e2e:** `createTestApp({ env: { SMTP_PORT: '1' } })`. Don't change `process.env` between apps in one file: Nest's ConfigModule reads it once per process. Read test mail with `test/utils/mailpit.ts` (`waitForMail(address)`), using a fresh address per test.
 - **E2E shares one persistent database** (`app_test`, which must be named `*_test` or the helpers refuse to connect). Rows other suites commit stay there, so use unique values (random or suite-specific domains) and never assert on global state such as the RBAC version.
 - **Graceful shutdown:** keep `enableShutdownHooks()` (in `configureApp`), and keep the Dockerfile running `node dist/main.js` under `tini`. npm doesn't forward SIGTERM.
 - **The husky pre-push hook runs typecheck and unit tests**; it fails if no `.spec.ts` exists.
@@ -72,5 +74,5 @@ npm run migration:check     # fails if entities and the migrated DB differ (CI r
 - `docs/invariants.md`: shared rules (statuses, lock order, challenge semantics, error codes, safe profile, logging, keys, cookies).
 - `docs/decisions.md`: why things are the way they are (D1, D2, …). Add an entry for every non-obvious choice.
 - `docs/known-gaps.md`: what's deliberately not done yet. Check it first and update it as gaps close.
-- `src/core/`: config, database, logging, errors, rate limits, authorization (route declarations, the global guard), health (the readiness registry) and app bootstrap.
+- `src/core/`: config, database, logging, errors, rate limits, mail, authorization (route declarations, the global guard), health (the readiness registry) and app bootstrap.
 - `src/modules/`: feature modules.

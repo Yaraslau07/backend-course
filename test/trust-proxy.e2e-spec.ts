@@ -10,16 +10,16 @@ import { RouteProbeModule } from './utils/route-probe.module';
  */
 describe('Rate limits behind a trusted proxy (e2e)', () => {
   let app: NestFastifyApplication;
-  const original = process.env.TRUST_PROXY;
 
   beforeAll(async () => {
-    process.env.TRUST_PROXY = 'true';
-    ({ app } = await createTestApp({ imports: [RouteProbeModule] }));
+    ({ app } = await createTestApp({
+      imports: [RouteProbeModule],
+      env: { TRUST_PROXY: 'true' },
+    }));
     await resetRateLimits(app);
   });
 
   afterAll(async () => {
-    process.env.TRUST_PROXY = original;
     await app.close();
   });
 

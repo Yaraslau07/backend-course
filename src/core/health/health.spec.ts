@@ -62,6 +62,26 @@ describe('ReadinessRegistry', () => {
     });
   });
 
+  it('reports a non-critical check without letting it fail readiness', async () => {
+    const registry = new ReadinessRegistry();
+    registry.register('database', () => Promise.resolve('up'));
+    registry.register('smtp', () => Promise.resolve({ down: 'ECONNECTION' }), {
+      critical: false,
+    });
+
+    expect(await registry.run()).toEqual({
+      status: 'ok',
+      checks: { database: 'up', smtp: 'down' },
+    });
+  });
+
+  it('is not ready when only non-critical checks are registered', async () => {
+    const registry = new ReadinessRegistry();
+    registry.register('smtp', () => Promise.resolve('up'), { critical: false });
+
+    expect((await registry.run()).status).toBe('unavailable');
+  });
+
   it('rejects duplicate names', () => {
     registry.register('a', () => Promise.resolve('up'));
     expect(() => registry.register('a', () => Promise.resolve('up'))).toThrow(

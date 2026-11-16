@@ -73,6 +73,12 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+      # Catches the mail e2e tests send; they read it back through the API on 8025.
+      mailpit:
+        image: axllent/mailpit:v1.27
+        ports:
+          - 1025:1025
+          - 8025:8025
     # Everything else comes from the committed .env.test (test-only keys).
     env:
       CI: true
@@ -117,6 +123,8 @@ jobs:
           docker network create ci
           docker run -d --name pg --network ci -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=app postgres:18-alpine
           for i in $(seq 1 30); do docker exec pg pg_isready -U postgres -d app && break; sleep 2; done
+          # Readiness includes an smtp check, so the container needs a mail server to talk to.
+          docker run -d --name mail --network ci axllent/mailpit:v1.27
       - name: Run the image with a production env and fresh keys
         run: |
           node scripts/generate-keys.mjs > keys.env
@@ -133,7 +141,7 @@ jobs:
           POSTGRES_MIGRATIONS_RUN=true
           JWT_ISSUER=backend-course
           JWT_AUDIENCE=backend-course-api
-          SMTP_HOST=localhost
+          SMTP_HOST=mail
           SMTP_PORT=1025
           MAIL_FROM=Backend Course <no-reply@example.test>
           ENV

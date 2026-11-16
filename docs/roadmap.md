@@ -10,8 +10,8 @@ The order the assignment is being built in, and why. Update the status column as
 | C3. Route declarations | 1b | 1.3 | ✅ done |
 | C4. CSRF guard | 1b | 1.2, 1.3 | ✅ done |
 | C5. Throttling | 1b | 1.0–1.7, 2.3 | ✅ done |
-| C6. MailService | 1b | | ⏭ next |
-| C7. Email challenge engine | 1c | 1.0, 1.2, 1.5, 1.6 | pending |
+| C6. MailService | 1b | 1.0, 1.2, 1.5, 1.6 | ✅ done |
+| C7. Email challenge engine | 1c | 1.0, 1.2, 1.5, 1.6 | ⏭ next |
 | C8. Registration | 1c | 1.0 | pending |
 | C9. Authentication | 1c | 1.2 | pending |
 | C10. RBAC | 1c | 1.1 | pending |
@@ -76,7 +76,7 @@ The Part 2 `transformations` table gets its own migration in Phase 3.
 
 Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/invariants.md`.
 
-## Phase 1b: Shared framework pieces ⏭
+## Phase 1b: Shared framework pieces ✅
 
 **Sequential.** These were deferred from Phase 0; see `docs/known-gaps.md`.
 
@@ -84,7 +84,7 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
 2. ✅ **Route declarations** (C3, D23–D26): `@Public()`, `@Internal()`, `@RequirePermission(permission, action)`, `@Receipt(header)`; a startup scan behind the `route_declarations` readiness check; a global guard that fails closed on protected routes until C11.
 3. ✅ **CSRF guard** (C4, D27–D28): cross-origin writes need an exact `Origin` and `X-CSRF-Protection: 1`, otherwise `403 csrf_rejected`. Public writes are checked in the route guard now; protected ones after identity in C11.
 4. ✅ **Throttling** (C5, D29–D32): every spec limit as a named policy; exact sliding windows in Postgres with HMAC keys; `@RateLimit()` for IP-keyed limits on routes, `RateLimiter` for custom ones; cleanup every 5 minutes.
-5. **MailService:** nodemailer transport with a 2 s timeout, OTP and magic-link templates, an `smtp` readiness check. Tests read mail through the Mailpit API.
+5. ✅ **MailService** (C6, D33–D36): nodemailer with a 2 s limit, OTP and magic-link templates (token in the URL fragment), an `smtp` readiness check. Tests read mail through the Mailpit API.
 
 ## Phase 1c: Core auth and access
 
@@ -114,7 +114,7 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
    - the admin CRUD for roles, permissions, grants and user roles
    - the last-`rbac@manage`-holder guard
    - the `user` role assigned on activation
-5. **Authorization chain** (spec 1.3): access → active user → CSRF → RBAC → resource → ownership, with `503 authorization_unavailable`.
+5. **Authorization chain** (spec 1.3): access → active user → CSRF → IP and user rate limits → RBAC → resource → ownership, with `503 authorization_unavailable`. It replaces the fail-closed `protectedChain` in `route-access.guard.ts`, and must enforce the route's `@RateLimit` policies, both kinds (D37).
 
 ## Phase 2: User features
 

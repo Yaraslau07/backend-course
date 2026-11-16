@@ -39,6 +39,7 @@ Shared semantics. Each scenario has **its own HMAC key**.
 - Resend: at most once per 60 s from `last_sent_at` (`429` with the remaining seconds). It replaces `secret_hash`, resets `attempts` and restarts the TTL; the old secret stops working.
 - One outstanding challenge per user per scenario (partial unique index). A new one consumes the old as `replaced`.
 - `consumed_reason`: `confirmed`, `replaced`, `attempts_exhausted`, `user_inactive`, `admin_override`, `email_conflict`, `job_exists`.
+- Mail goes through `MailService.sendChallenge()` (2 s limit). A failure is `MailUnavailableError` (a 503); flows catch it to add the safe fields below (D33).
 - Commit **before** SMTP. If SMTP fails after the commit, return `503` with `confirmationRequired`, `method`, the id and `retryAfterSeconds`, and keep the challenge. The secret is never in a response.
 - Responses: `202 { confirmationRequired: true, method, attemptId|challengeId, expiresInSeconds: 600, resendAfterSeconds: 60 }`.
 - Use claim-then-act for single-use consumption: a conditional `UPDATE … WHERE consumed_at IS NULL`, then check `affected`.
@@ -75,6 +76,7 @@ Generic codes, used when nothing more specific applies:
 | 401 | `invalid_session` | also any stray 401 |
 | 403 | `forbidden` | a plain 403 that isn't one of the specific ones |
 | 404 | `not_found` | missing resource or route |
+| 405, 408, 422 | `method_not_allowed`, `request_timeout`, `unprocessable_entity` | any other 4xx becomes `400 bad_request`, so a code always means one status (D37) |
 | 409 | `conflict` | includes an unhandled unique violation (`23505`) |
 | 413, 415 | `payload_too_large`, `unsupported_media_type` | |
 | 429 | `too_many_requests` | sets `Retry-After` when `retryAfterSeconds` is given |
@@ -114,7 +116,7 @@ email (cleartext), password, password hash, OTP, magic-link token, HMAC, JWT, `C
 
 - Every limit is a named policy in `src/core/rate-limit/rate-limit.policies.ts`, with its spec section. Exceeding one is `429 too_many_requests` with `retryAfterSeconds` and `Retry-After`.
 - Windows slide: at most N allowed hits in any window. Refused requests don't count (D29).
-- IP-keyed policies go on routes with `@RateLimit()`; user-keyed ones only on `@RequirePermission` routes; custom ones (email + IP, emails sent, self vs. foreign) are applied in code with `RateLimiter` (D32).
+- IP-keyed policies go on routes with `@RateLimit()`; user-keyed ones only on `@RequirePermission` routes; custom ones (email + IP, emails sent, self vs. foreign) are applied in code with `RateLimiter` (D32). Failure-only limits `consume()` before the attempt and `release()` on success, so concurrent attempts can't exceed the limit (D37).
 - Stored keys are HMACs; the `rate_limits` table never holds an IP, email or id (D31).
 
 ## Cookies

@@ -14,7 +14,6 @@ A running list of what's still outstanding. Check it before assuming something i
 - **CSRF on protected routes** runs after identity, so it arrives with the chain in C11 (D28). Public writes are checked now.
 - **Cross-site cookies:** for a frontend on another site, both auth cookies need `SameSite=None; Secure` (spec 1.2). That is a cookie attribute, set where cookies are issued (C9).
 - **Rate limits are in place, but mostly unused yet:** each policy is applied by the checkpoint that adds its route (registration C8, login and refresh C9, …). User-keyed ones start working with the protected chain in C11.
-- **MailService:** nodemailer transport with a 2 s timeout, templates, and an `smtp` readiness check.
 
 ## Infrastructure
 - No CD. The course only requires a service called through an HTTP client.
@@ -27,7 +26,11 @@ A running list of what's still outstanding. Check it before assuming something i
 
 ## Rate limits
 - `TRUST_PROXY` must be `true` behind a reverse proxy, or every client shares the proxy's IP budget. It must stay `false` when the app is reachable directly, or a client can pick its own IP with `X-Forwarded-For`.
-- The failure-only login limit (`peek()` then `record()`) can let a few extra attempts through when several fail at the same instant (D32).
+
+## Mail
+- Magic-link pages (`/auth/register/confirm`, …) belong to a frontend this project doesn't have (D35). To try a link flow, take the token from the mail in Mailpit (http://localhost:8025) and POST it yourself.
+- The `smtp` readiness check is informational (D37): an SMTP outage shows as `smtp: down` while `status` stays `ok`. Alert on the check itself if mail matters to you.
+- nodemailer is pinned to 10.3.1 (D36); newer 10.x releases exist.
 
 ## Errors
 - The pg pool has no `connectionTimeoutMillis`, so with Postgres unreachable but not refusing connections (a dropped network rather than a stopped server), a query can wait on the OS timeout instead of failing fast as a 503. To set in C9, where "DB down → 503, not 401" is tested.
