@@ -1,5 +1,7 @@
 import { Check, Column, Entity, ForeignKey, Index } from 'typeorm';
 
+import { timestamp, timestampNow } from '../../../database/columns';
+
 import { User } from '../../users/entities/user.entity';
 
 import {
@@ -39,20 +41,10 @@ export abstract class ChallengeBase {
   attempts: number;
 
   /** The TTL (10 min) and the resend cooldown (60 s) are both measured from here. */
-  @Column({
-    name: 'last_sent_at',
-    type: 'timestamptz',
-    precision: 3,
-    default: () => 'now()',
-  })
+  @Column(timestampNow('last_sent_at'))
   lastSentAt: Date;
 
-  @Column({
-    name: 'consumed_at',
-    type: 'timestamptz',
-    precision: 3,
-    nullable: true,
-  })
+  @Column(timestamp('consumed_at', { nullable: true }))
   consumedAt: Date | null;
 
   @Column({
@@ -64,12 +56,7 @@ export abstract class ChallengeBase {
   })
   consumedReason: ChallengeConsumedReason | null;
 
-  @Column({
-    name: 'created_at',
-    type: 'timestamptz',
-    precision: 3,
-    default: () => 'now()',
-  })
+  @Column(timestampNow('created_at'))
   createdAt: Date;
 }
 

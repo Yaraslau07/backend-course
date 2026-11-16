@@ -1,5 +1,7 @@
 import { Check, Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
+import { timestampNow } from '../../../database/columns';
+
 import {
   STORAGE_CLEANUP_REASONS,
   STORAGE_CLEANUP_STATUSES,
@@ -47,31 +49,15 @@ export class StorageCleanupJob {
   @Column({ type: 'smallint', default: 0 })
   attempts: number;
 
-  @Column({
-    name: 'next_attempt_at',
-    type: 'timestamptz',
-    precision: 3,
-    nullable: true,
-    default: () => 'now()',
-  })
+  @Column(timestampNow('next_attempt_at', { nullable: true }))
   nextAttemptAt: Date | null;
 
   @Column({ name: 'last_error_code', type: 'text', nullable: true })
   lastErrorCode: string | null;
 
-  @Column({
-    name: 'created_at',
-    type: 'timestamptz',
-    precision: 3,
-    default: () => 'now()',
-  })
+  @Column(timestampNow('created_at'))
   createdAt: Date;
 
-  @Column({
-    name: 'updated_at',
-    type: 'timestamptz',
-    precision: 3,
-    default: () => 'now()',
-  })
+  @Column(timestampNow('updated_at'))
   updatedAt: Date;
 }

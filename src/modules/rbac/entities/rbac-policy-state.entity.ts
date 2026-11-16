@@ -1,5 +1,7 @@
 import { Check, Column, Entity, PrimaryColumn } from 'typeorm';
 
+import { timestampNow } from '../../../database/columns';
+
 export const RBAC_POLICY_STATE_ID = 1;
 
 /**
@@ -23,11 +25,6 @@ export class RbacPolicyState {
   @Column({ type: 'bigint', default: 0 })
   version: string;
 
-  @Column({
-    name: 'updated_at',
-    type: 'timestamptz',
-    precision: 3,
-    default: () => 'now()',
-  })
+  @Column(timestampNow('updated_at'))
   updatedAt: Date;
 }

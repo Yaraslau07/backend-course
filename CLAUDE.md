@@ -54,7 +54,8 @@ npm run migration:check     # fails if entities and the migrated DB differ (CI r
 - **Migrations glob** is `src/database/migrations/*-*.{ts|js}` (only the current build's extension, because `dist/` also has `.d.ts`). Keep the CLI's `<timestamp>-<Name>` file naming.
 - **Entities** are `*.entity.ts` anywhere under `src/` (loaded by glob). Give every constraint and index an explicit name (`pk_`, `uq_`, `fk_`, `ck_`, `idx_` + table), because tests and the error filter match on names. Use relative imports inside entity files: the TypeORM CLI doesn't resolve `@/`.
 - **Generated migrations need a hand pass.** `migration:generate` emits a shared enum type (`challenge_method`, …) once per table that uses it, so the raw output fails on the second `CREATE TYPE`. Tidy the file, then prove it with `migration:run`, `migration:check`, `migration:revert`, `migration:run`.
-- **Timestamps are `timestamptz(3)`** with `default: () => 'now()'`, never `@UpdateDateColumn` (D12). Set `updated_at = now()` in the write itself.
+- **Timestamps are `timestamptz(3)`**: declare them with `timestamp()` / `timestampNow()` from `src/database/columns.ts`, never `@UpdateDateColumn` (D12). Set `updated_at = now()` in the write itself.
+- **E2E shares one persistent database** (`app_test`, which must be named `*_test` or the helpers refuse to connect). Rows other suites commit stay there, so use unique values (random or suite-specific domains) and never assert on global state such as the RBAC version.
 - **Graceful shutdown:** keep `enableShutdownHooks()` (in `configureApp`), and keep the Dockerfile running `node dist/main.js` under `tini`. npm doesn't forward SIGTERM.
 - **The husky pre-push hook runs typecheck and unit tests**; it fails if no `.spec.ts` exists.
 

@@ -1,5 +1,7 @@
 import { Check, Column, Entity, PrimaryGeneratedColumn, Unique } from 'typeorm';
 
+import { timestampNow } from '../../../database/columns';
+
 import { USER_STATUSES, type UserStatus } from '../users.types';
 
 /**
@@ -16,7 +18,7 @@ import { USER_STATUSES, type UserStatus } from '../users.types';
 // The app normalizes (trim, lowercase) before writing; the database only refuses what is certainly wrong.
 @Check(
   'ck_users_email',
-  `"email" = btrim("email") AND char_length("email") BETWEEN 3 AND 254`,
+  `"email" !~ '^\\s|\\s$' AND char_length("email") BETWEEN 3 AND 254`,
 )
 @Check('ck_users_display_name', `char_length("display_name") BETWEEN 1 AND 80`)
 // Spec 1.6: password_hash may be null only when deleted, and a deleted row carries no name or photo.
@@ -47,19 +49,9 @@ export class User {
   @Column({ type: 'enum', enum: USER_STATUSES, enumName: 'user_status' })
   status: UserStatus;
 
-  @Column({
-    name: 'created_at',
-    type: 'timestamptz',
-    precision: 3,
-    default: () => 'now()',
-  })
+  @Column(timestampNow('created_at'))
   createdAt: Date;
 
-  @Column({
-    name: 'updated_at',
-    type: 'timestamptz',
-    precision: 3,
-    default: () => 'now()',
-  })
+  @Column(timestampNow('updated_at'))
   updatedAt: Date;
 }

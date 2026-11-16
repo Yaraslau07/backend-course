@@ -6,6 +6,7 @@ A running list of what's still outstanding. Check it before assuming something i
 - The schema covers Part 1 only. Still to come, each with its own migration: rate-limit counters (C5), the list-search indexes on `users` (C12), `transformations` (C15).
 - `POSTGRES_MIGRATIONS_RUN=false` by default, so a deploy must run `npm run migration:run` (or set the flag) itself. CI and `npm run test:e2e` migrate their own database.
 - `grants.all_actions = true` should mean "no `grant_actions` rows". That spans two tables, so it's enforced by the RBAC service (C10), not by a constraint.
+- `ck_deletion_jobs_attempts` caps starts at 5. The deletion worker's claim (C14) must move an expired `running` job with 5 attempts to `failed`; a plain `attempts + 1` on it would violate the constraint.
 - No entity is registered with a Nest module yet (`TypeOrmModule.forFeature`); each feature does that when it first needs a repository.
 
 ## Phase 1 framework pieces (deliberately not in Phase 0)

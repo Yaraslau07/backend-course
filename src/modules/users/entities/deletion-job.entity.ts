@@ -8,6 +8,8 @@ import {
   Unique,
 } from 'typeorm';
 
+import { timestamp, timestampNow } from '../../../database/columns';
+
 import { DELETION_JOB_STATUSES, type DeletionJobStatus } from '../users.types';
 import { User } from './user.entity';
 
@@ -25,6 +27,8 @@ import { User } from './user.entity';
   'ck_deletion_jobs_tombstone_email',
   `"tombstone_email" ~ '^deleted\\.[0-9a-f]{32}@example\\.invalid$'`,
 )
+// At most 5 automatic starts (spec 1.6). A job found `running` with an expired lease and 5 attempts
+// already used must be moved to `failed` by the claim, not started a 6th time.
 @Check('ck_deletion_jobs_attempts', `"attempts" BETWEEN 0 AND 5`)
 // Each status fixes which of lease / next attempt / finish time is set, so a half-updated job can't be stored.
 @Check(
@@ -54,20 +58,10 @@ export class DeletionJob {
   @Column({ type: 'smallint', default: 0 })
   attempts: number;
 
-  @Column({
-    name: 'lease_until',
-    type: 'timestamptz',
-    precision: 3,
-    nullable: true,
-  })
+  @Column(timestamp('lease_until', { nullable: true }))
   leaseUntil: Date | null;
 
-  @Column({
-    name: 'next_attempt_at',
-    type: 'timestamptz',
-    precision: 3,
-    nullable: true,
-  })
+  @Column(timestamp('next_attempt_at', { nullable: true }))
   nextAttemptAt: Date | null;
 
   /** Generated once when the job is created; becomes the user's email at anonymization. */
@@ -78,27 +72,12 @@ export class DeletionJob {
   @Column({ name: 'last_error_code', type: 'text', nullable: true })
   lastErrorCode: string | null;
 
-  @Column({
-    name: 'finished_at',
-    type: 'timestamptz',
-    precision: 3,
-    nullable: true,
-  })
+  @Column(timestamp('finished_at', { nullable: true }))
   finishedAt: Date | null;
 
-  @Column({
-    name: 'created_at',
-    type: 'timestamptz',
-    precision: 3,
-    default: () => 'now()',
-  })
+  @Column(timestampNow('created_at'))
   createdAt: Date;
 
-  @Column({
-    name: 'updated_at',
-    type: 'timestamptz',
-    precision: 3,
-    default: () => 'now()',
-  })
+  @Column(timestampNow('updated_at'))
   updatedAt: Date;
 }

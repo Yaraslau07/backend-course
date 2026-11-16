@@ -73,7 +73,7 @@ describe('Part 1 database schema (e2e)', () => {
     emailCounter += 1;
     const [user] = await rows<{ id: string }>(
       `INSERT INTO users (email, password_hash, status) VALUES ($1, 'hash', $2) RETURNING id`,
-      [`schema-user-${emailCounter}@example.com`, status],
+      [`user-${emailCounter}@schema-spec.invalid`, status],
     );
     return user.id;
   }
@@ -125,7 +125,7 @@ describe('Part 1 database schema (e2e)', () => {
         display_name: string | null;
         photo_key: string | null;
       }>(
-        `INSERT INTO users (email, password_hash, status) VALUES ('new@example.com', 'hash', 'pending')
+        `INSERT INTO users (email, password_hash, status) VALUES ('new@schema-spec.invalid', 'hash', 'pending')
          RETURNING id, created_at, updated_at, created_at::text AS created_text, display_name, photo_key`,
       );
 
@@ -133,7 +133,7 @@ describe('Part 1 database schema (e2e)', () => {
       expect(user.created_at).toBeInstanceOf(Date);
       expect(user.updated_at.getTime()).toBe(user.created_at.getTime());
       // No microseconds: a JS Date (and so a list cursor) round-trips the stored value exactly.
-      expect(user.created_text).toMatch(/^[^.]+(\.\d{1,3})?\+/);
+      expect(user.created_text).toMatch(/^[^.]+(\.\d{1,3})?[+-]\d/);
       expect(user.display_name).toBeNull();
       expect(user.photo_key).toBeNull();
     });
@@ -143,48 +143,50 @@ describe('Part 1 database schema (e2e)', () => {
         await createUser(status);
       }
       await qr.query(
-        `INSERT INTO users (email, password_hash, status) VALUES ('gone@example.com', NULL, 'deleted')`,
+        `INSERT INTO users (email, password_hash, status) VALUES ('gone@schema-spec.invalid', NULL, 'deleted')`,
       );
 
       expect(
         await violation(
-          `INSERT INTO users (email, password_hash, status) VALUES ('x@example.com', 'hash', 'archived')`,
+          `INSERT INTO users (email, password_hash, status) VALUES ('x@schema-spec.invalid', 'hash', 'archived')`,
         ),
       ).toMatchObject({ code: BAD_ENUM });
     });
 
     it('rejects a second user with the same email', async () => {
       await qr.query(
-        `INSERT INTO users (email, password_hash, status) VALUES ('dup@example.com', 'hash', 'active')`,
+        `INSERT INTO users (email, password_hash, status) VALUES ('dup@schema-spec.invalid', 'hash', 'active')`,
       );
 
       expect(
         await violation(
-          `INSERT INTO users (email, password_hash, status) VALUES ('dup@example.com', 'hash', 'pending')`,
+          `INSERT INTO users (email, password_hash, status) VALUES ('dup@schema-spec.invalid', 'hash', 'pending')`,
         ),
       ).toEqual({ code: UNIQUE, constraint: 'uq_users_email' });
     });
 
-    it('treats user+tag@example.com as a separate address', async () => {
+    it('treats user+tag@schema-spec.invalid as a separate address', async () => {
       await qr.query(
-        `INSERT INTO users (email, password_hash, status) VALUES ('user@example.com', 'hash', 'active'),
-                                                                  ('user+tag@example.com', 'hash', 'active')`,
+        `INSERT INTO users (email, password_hash, status) VALUES ('user@schema-spec.invalid', 'hash', 'active'),
+                                                                  ('user+tag@schema-spec.invalid', 'hash', 'active')`,
       );
     });
 
     it('rejects an email with outer whitespace or longer than 254 characters', async () => {
-      expect(
-        await violation(
-          `INSERT INTO users (email, password_hash, status) VALUES (' padded@example.com', 'hash', 'active')`,
-        ),
-      ).toEqual({ code: CHECK, constraint: 'ck_users_email' });
-
-      expect(
-        await violation(
-          `INSERT INTO users (email, password_hash, status) VALUES ($1, 'hash', 'active')`,
-          [`${'a'.repeat(243)}@example.com`],
-        ),
-      ).toEqual({ code: CHECK, constraint: 'ck_users_email' });
+      for (const email of [
+        ' padded@schema-spec.invalid',
+        'padded@schema-spec.invalid ',
+        'padded@schema-spec.invalid\n',
+        '\tpadded@schema-spec.invalid',
+        `${'a'.repeat(236)}@schema-spec.invalid`,
+      ]) {
+        expect(
+          await violation(
+            `INSERT INTO users (email, password_hash, status) VALUES ($1, 'hash', 'active')`,
+            [email],
+          ),
+        ).toEqual({ code: CHECK, constraint: 'ck_users_email' });
+      }
     });
 
     it('rejects an empty display name or one longer than 80 code points', async () => {
@@ -213,7 +215,7 @@ describe('Part 1 database schema (e2e)', () => {
       for (const status of ['pending', 'active', 'blocked', 'deleting']) {
         expect(
           await violation(
-            `INSERT INTO users (email, password_hash, status) VALUES ('nohash@example.com', NULL, $1)`,
+            `INSERT INTO users (email, password_hash, status) VALUES ('nohash@schema-spec.invalid', NULL, $1)`,
             [status],
           ),
         ).toEqual({ code: CHECK, constraint: 'ck_users_deleted_state' });
@@ -251,7 +253,7 @@ describe('Part 1 database schema (e2e)', () => {
   describe.each([
     ['registration_challenges', ''],
     ['login_challenges', ''],
-    ['email_change_challenges', 'new@example.com'],
+    ['email_change_challenges', 'new@schema-spec.invalid'],
     ['deletion_challenges', ''],
   ])('%s', (table, newEmail) => {
     const extraColumn = newEmail ? ', new_email' : '';
@@ -410,13 +412,42 @@ describe('Part 1 database schema (e2e)', () => {
         ),
       ).toMatchObject({ code: NOT_NULL });
     });
+
+    it('rejects a target address with outer whitespace or longer than 254 characters', async () => {
+      for (const newEmail of [
+        ' new@schema-spec.invalid',
+        'new@schema-spec.invalid\n',
+        `${'a'.repeat(236)}@schema-spec.invalid`,
+      ]) {
+        expect(
+          await violation(
+            `INSERT INTO email_change_challenges (user_id, method, secret_hash, new_email) VALUES ($1, 'otp', $2, $3)`,
+            [await createUser(), HASH, newEmail],
+          ),
+        ).toEqual({
+          code: CHECK,
+          constraint: 'ck_email_change_challenges_new_email',
+        });
+      }
+    });
   });
 
   describe('RBAC', () => {
-    it('starts with exactly one policy state row at version 0', async () => {
-      expect(await rows(`SELECT id, version FROM rbac_policy_state`)).toEqual([
-        { id: 1, version: '0' },
-      ]);
+    it('has exactly one policy state row, created by the migration', async () => {
+      // Other suites bump the version in this shared database, so only its shape is asserted.
+      const state = await rows<{ id: number; version: string }>(
+        `SELECT id, version FROM rbac_policy_state`,
+      );
+
+      expect(state).toHaveLength(1);
+      expect(state[0].id).toBe(1);
+      expect(state[0].version).toMatch(/^\d+$/);
+    });
+
+    it('never lets the policy version go negative', async () => {
+      expect(
+        await violation(`UPDATE rbac_policy_state SET version = -1`),
+      ).toEqual({ code: CHECK, constraint: 'ck_rbac_policy_state_version' });
     });
 
     it('cannot hold a second policy state row', async () => {
@@ -700,7 +731,7 @@ describe('Part 1 database schema (e2e)', () => {
         await violation(insert, [
           'c'.repeat(32),
           await createUser(),
-          'deleted.user@example.com',
+          'deleted.user@schema-spec.invalid',
         ]),
       ).toEqual({
         code: CHECK,
@@ -887,6 +918,14 @@ describe('Part 1 database schema (e2e)', () => {
       );
 
       expect(index?.indexdef).toContain(columns);
+    });
+
+    it('idx_registration_challenges_secret_hash covers only outstanding challenges', async () => {
+      const [index] = await rows<{ indexdef: string }>(
+        `SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_registration_challenges_secret_hash'`,
+      );
+
+      expect(index?.indexdef).toContain('WHERE (consumed_at IS NULL)');
     });
   });
 });

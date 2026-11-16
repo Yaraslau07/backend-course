@@ -1,5 +1,7 @@
 import { Column, Entity, ForeignKey, Index, PrimaryColumn } from 'typeorm';
 
+import { timestampNow } from '../../../database/columns';
+
 import { User } from '../../users/entities/user.entity';
 
 import { Role } from './role.entity';
@@ -25,11 +27,6 @@ export class UserRole {
   @ForeignKey(() => Role, { name: 'fk_user_roles_role' })
   roleId: string;
 
-  @Column({
-    name: 'created_at',
-    type: 'timestamptz',
-    precision: 3,
-    default: () => 'now()',
-  })
+  @Column(timestampNow('created_at'))
   createdAt: Date;
 }

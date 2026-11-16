@@ -23,7 +23,7 @@ Conventions:
 | Constraint | Rule | Spec |
 |---|---|---|
 | `uq_users_email` | one account per email, including `pending` ones | 1.0 |
-| `ck_users_email` | no outer whitespace, 3 to 254 characters | 1.0 |
+| `ck_users_email` | no leading or trailing whitespace of any kind, 3 to 254 characters | 1.0 |
 | `ck_users_display_name` | 1 to 80 code points | 1.5 |
 | `ck_users_deleted_state` | `password_hash` is null only when `deleted`; a `deleted` row has no name or photo | 1.6 |
 
@@ -81,7 +81,7 @@ One row per user being deleted (spec 1.6).
 | `id` | text: the client's `Idempotency-Key`, 32 lowercase hex (`ck_deletion_jobs_id`) |
 | `user_id` | → `users`, unique (`uq_deletion_jobs_user`) |
 | `status` | `queued`, `running`, `succeeded`, `failed` |
-| `attempts` | automatic starts, 0 to 5 |
+| `attempts` | automatic starts, 0 to 5; the claim must fail a job that already used 5 instead of starting it again |
 | `lease_until`, `next_attempt_at`, `finished_at` | which ones are set depends on `status` (`ck_deletion_jobs_state`) |
 | `tombstone_email` | unique, `deleted.<32 hex>@example.invalid` |
 | `last_error_code` | a safe code, never a library message |

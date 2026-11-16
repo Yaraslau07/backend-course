@@ -7,6 +7,8 @@ import {
   Unique,
 } from 'typeorm';
 
+import { timestampNow } from '../../../database/columns';
+
 import { Permission } from './permission.entity';
 import { Role } from './role.entity';
 
@@ -36,19 +38,9 @@ export class Grant {
   @Column({ name: 'all_actions', type: 'boolean' })
   allActions: boolean;
 
-  @Column({
-    name: 'created_at',
-    type: 'timestamptz',
-    precision: 3,
-    default: () => 'now()',
-  })
+  @Column(timestampNow('created_at'))
   createdAt: Date;
 
-  @Column({
-    name: 'updated_at',
-    type: 'timestamptz',
-    precision: 3,
-    default: () => 'now()',
-  })
+  @Column(timestampNow('updated_at'))
   updatedAt: Date;
 }

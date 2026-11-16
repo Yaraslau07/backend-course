@@ -5,7 +5,7 @@ import { ChallengeBase, ChallengeEntity } from './challenge-base.entity';
 @ChallengeEntity('email_change_challenges')
 @Check(
   'ck_email_change_challenges_new_email',
-  `"new_email" = btrim("new_email") AND char_length("new_email") BETWEEN 3 AND 254`,
+  `"new_email" !~ '^\\s|\\s$' AND char_length("new_email") BETWEEN 3 AND 254`,
 )
 export class EmailChangeChallenge extends ChallengeBase {
   @PrimaryGeneratedColumn('uuid', {

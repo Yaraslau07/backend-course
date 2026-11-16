@@ -36,7 +36,7 @@ export class InitialSchema1794837923143 implements MigrationInterface {
         "updated_at" ${TIMESTAMP} NOT NULL DEFAULT now(),
         CONSTRAINT "pk_users" PRIMARY KEY ("id"),
         CONSTRAINT "uq_users_email" UNIQUE ("email"),
-        CONSTRAINT "ck_users_email" CHECK ("email" = btrim("email") AND char_length("email") BETWEEN 3 AND 254),
+        CONSTRAINT "ck_users_email" CHECK ("email" !~ '^\\s|\\s$' AND char_length("email") BETWEEN 3 AND 254),
         CONSTRAINT "ck_users_display_name" CHECK (char_length("display_name") BETWEEN 1 AND 80),
         CONSTRAINT "ck_users_deleted_state" CHECK (
           ("status" = 'deleted' AND "password_hash" IS NULL AND "display_name" IS NULL AND "photo_key" IS NULL)
@@ -73,7 +73,7 @@ export class InitialSchema1794837923143 implements MigrationInterface {
           CONSTRAINT "ck_${table}_secret_hash" CHECK (octet_length("secret_hash") = 32)
           ${
             emailChange
-              ? `, CONSTRAINT "ck_${table}_new_email" CHECK ("new_email" = btrim("new_email") AND char_length("new_email") BETWEEN 3 AND 254)`
+              ? `, CONSTRAINT "ck_${table}_new_email" CHECK ("new_email" !~ '^\\s|\\s$' AND char_length("new_email") BETWEEN 3 AND 254)`
               : ''
           }
         )
