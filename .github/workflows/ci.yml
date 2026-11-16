@@ -88,6 +88,12 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Run migrations
         run: npm run migration:run
+      # Entities and migrations must describe the same schema; a forgotten migration fails here.
+      - name: Entities match the migrated schema
+        run: npm run migration:check
+      # The newest migration must be reversible and re-appliable.
+      - name: Latest migration reverts and re-applies
+        run: npm run migration:revert && npm run migration:run
       - run: npm run test:e2e
 
   docker-build:
@@ -124,6 +130,7 @@ jobs:
           POSTGRES_USER=postgres
           POSTGRES_PASSWORD=postgres
           POSTGRES_DB=app
+          POSTGRES_MIGRATIONS_RUN=true
           JWT_ISSUER=backend-course
           JWT_AUDIENCE=backend-course-api
           SMTP_HOST=localhost
@@ -140,6 +147,10 @@ jobs:
           docker exec app wget -qO- http://127.0.0.1:3007/health/ready
           # From outside it must look like it doesn't exist.
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3007/health/ready)" = "404"
+      - name: The image applied its compiled migrations
+        run: |
+          test "$(docker exec pg psql -U postgres -d app -Atc 'SELECT version FROM rbac_policy_state')" = "0"
+          test "$(docker exec pg psql -U postgres -d app -Atc 'SELECT count(*) FROM migrations')" -ge 1
       - name: Container logs
         if: always()
         run: docker logs app || true

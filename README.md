@@ -12,6 +12,7 @@ npm install
 docker compose up -d                     # Postgres (app + app_test) and Mailpit
 cp .env.example .env
 npm run keys:generate                    # paste the output over the empty key lines in .env
+npm run migration:run                    # create the schema in the `app` database
 npm run start:dev
 curl http://localhost:3007/health/live   # {"status":"ok"}
 ```
@@ -25,9 +26,10 @@ API docs (development only): http://localhost:3007/docs. Caught emails: http://l
 | `start:dev` / `start:prod` | watch mode / `node dist/main` |
 | `build`, `typecheck`, `lint`, `format` | the usual |
 | `test`, `test:cov` | unit tests; `test:cov` enforces 80% coverage |
-| `test:e2e` | e2e against the `app_test` DB using `.env.test` |
+| `test:e2e` | e2e against the `app_test` DB using `.env.test`; applies pending migrations to it first |
 | `keys:generate` | prints fresh secret keys (32 random bytes, base64url each) |
-| `migration:generate`, `migration:run`, `migration:revert`, `migration:show` | TypeORM CLI via `src/database/data-source.ts` |
+| `migration:generate`, `migration:run`, `migration:revert`, `migration:show` | TypeORM CLI via `src/database/data-source.ts` (uses `.env`; prefix with `NODE_ENV=test` for `app_test`) |
+| `migration:check` | fails if the entities and the migrated database differ |
 
 ## Configuration
 
@@ -56,6 +58,8 @@ src/
 docs/
 ├── specs/          # the assignment, one file per lesson
 ├── invariants.md   # cross-cutting rules
+├── roadmap.md      # build order, checkpoints and their gates
+├── schema.md       # the database tables and what each constraint is for
 ├── decisions.md    # why things are the way they are
 └── known-gaps.md   # what's deliberately not done yet
 ```
@@ -73,8 +77,8 @@ The image runs `node dist/main.js` under `tini` as user `node` with `NODE_ENV=pr
 `.github/workflows/ci.yml` runs:
 - lint and typecheck
 - unit tests with the coverage gate
-- e2e against Postgres, after migrations
-- Docker build plus a smoke test that hard-checks liveness and readiness
+- e2e against Postgres, after migrations, a drift check (`migration:check`) and a revert/re-apply of the newest migration
+- Docker build plus a smoke test that hard-checks liveness, readiness and that the image applied its migrations
 - `npm audit`
 - Trivy
 - the PR title check

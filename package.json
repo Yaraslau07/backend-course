@@ -23,6 +23,7 @@
     "migration:generate": "npm run typeorm -- migration:generate src/database/migrations/Migration -d src/database/data-source.ts",
     "migration:run": "npm run typeorm -- migration:run -d src/database/data-source.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/database/data-source.ts",
+    "migration:check": "npm run typeorm -- migration:generate src/database/migrations/Drift -d src/database/data-source.ts --check",
     "migration:show": "npm run typeorm -- migration:show -d src/database/data-source.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "prepare": "husky",
@@ -100,6 +101,7 @@
       "**/*.(t|j)s",
       "!main.ts",
       "!**/*.module.ts",
+      "!**/*.entity.ts",
       "!database/**",
       "!**/*.types.ts"
     ],

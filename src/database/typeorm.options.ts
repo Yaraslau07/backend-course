@@ -37,6 +37,10 @@ export function buildDataSourceOptions(
     migrationsRun: settings.migrationsRun,
 
     synchronize: false,
+    // Ids default to gen_random_uuid(), which is built into Postgres 13+. Without these two lines
+    // TypeORM would use uuid-ossp and run CREATE EXTENSION on every connect, which needs extra privileges.
+    uuidExtension: 'pgcrypto',
+    installExtensions: false,
     logging: settings.logging,
   };
 }

@@ -2,31 +2,55 @@
 
 The order the assignment is being built in, and why. Update the status column as phases land. Details for each step live in `docs/specs/<lesson>.md`; shared rules live in `docs/invariants.md`.
 
-| Phase | Status |
-|---|---|
-| 0. Foundation | ✅ done (PR #1) |
-| 1a. Database schema (Part 1) | ⏭ next |
-| 1b. Shared framework pieces | pending |
-| 1c. Core auth and access | pending |
-| 2. User features | pending |
-| 3. File transformations (Part 2) | pending |
+| Checkpoint | Phase | Spec | Status |
+|---|---|---|---|
+| C0. Foundation | 0 | | ✅ done (PR #1) |
+| C1. Part 1 schema | 1a | 1.0–1.2, 1.5, 1.6 | ✅ done |
+| C2. Error envelope | 1b | | ⏭ next |
+| C3. Route declarations | 1b | 1.3 | pending |
+| C4. CSRF guard | 1b | 1.2, 1.3 | pending |
+| C5. Throttling | 1b | | pending |
+| C6. MailService | 1b | | pending |
+| C7. Email challenge engine | 1c | 1.0, 1.2, 1.5, 1.6 | pending |
+| C8. Registration | 1c | 1.0 | pending |
+| C9. Authentication | 1c | 1.2 | pending |
+| C10. RBAC | 1c | 1.1 | pending |
+| C11. Authorization chain | 1c | 1.3 | pending |
+| C12. View and list | 2 | 1.4, 1.7 | pending |
+| C13. Update | 2 | 1.5 | pending |
+| C14. Delete | 2 | 1.6 | pending |
+| C15. Transformation framework | 3 | 2.0 | pending |
+| C16. Text | 3 | 2.1 | pending |
+| C17. Images | 3 | 2.2 | pending |
+| C18. History | 3 | 2.3 | pending |
+| C19. Storage | 3 | 2.4 | pending |
+| C20. Final audit | | all | pending |
 
-## How to work
+Each checkpoint is one branch and one PR. The next one starts only after the previous PR is merged.
 
-- **For every feature, write the tests from the spec first**, then implement until they pass. Ideally one agent writes the tests and another implements, so tests don't end up matching the implementation's bugs. Cover every status code and edge case the spec lists (the 5th OTP attempt, check order, 403-before-404).
-- **One branch and PR per step.** CI must be green: coverage ≥ 80%, e2e passing.
-- After each phase, run `/code-review` and `/security-review`, and audit the result against the spec: walk the section's error list and logging rules, and point to the code that satisfies each item.
-- Record every non-obvious choice in `docs/decisions.md`, update `docs/known-gaps.md`, and update the status table above.
+## The gate every checkpoint must pass
+
+1. **Tests first.** Every status code, check-order rule and edge case in the lesson's sections 1.3–1.6 has a test, written from the spec and committed failing (`test:` commit) before the implementation.
+2. **Local commands pass:** `npm run lint` with no warnings, `npm run typecheck`, `npm run test:cov` (≥ 80%), `npm run test:e2e`, `npm run build`.
+3. **Spec audit in the PR description:** a table walking the lesson's error list (§1.4), logging rules (§1.5) and non-functional requirements (§1.6), each row pointing at the code and the test. Anything left out goes into `docs/known-gaps.md`.
+4. **Log-leak check:** e2e tests capture the logs and assert that none of the "never log" values from `docs/invariants.md` appear (the helper arrives in C2).
+5. **Manual smoke** from a committed HTTP-client file in `http/`, against `npm run start:dev`.
+6. **Docs updated:** `docs/decisions.md`, `docs/known-gaps.md`, the table above, and `CLAUDE.md` if a rule or gotcha changed.
+7. **CI green on the PR.**
+
+`/code-review` and `/security-review` run at the end of each phase (after C1, C6, C11, C14, C19), and individually on C7, C9, C10, C11 and C14.
+
+Schema checkpoints add: `migration:run` → `migration:revert` → `migration:run` on an empty database, and `npm run migration:check` reporting no drift.
 
 ## Phase 0: Foundation ✅
 
 Config and keys, the readiness registry, logging, app bootstrap, Docker, CI, git hooks and docs. See PR #1 and decisions D1–D11.
 
-## Phase 1a: Database schema (Part 1) ⏭
+## Phase 1a: Database schema (Part 1) ✅
 
-**Sequential.** Do this first: parallel work would collide on migrations.
+Done in C1; see `docs/schema.md` and decisions D12–D17.
 
-Write one initial migration plus entities for:
+One initial migration plus entities for:
 - `users`:
   - uuid id; unique normalized email (text)
   - `password_hash` (nullable only when `status = deleted`)
@@ -52,7 +76,7 @@ The Part 2 `transformations` table gets its own migration in Phase 3.
 
 Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/invariants.md`.
 
-## Phase 1b: Shared framework pieces
+## Phase 1b: Shared framework pieces ⏭
 
 **Sequential.** These were deferred from Phase 0; see `docs/known-gaps.md`.
 
@@ -97,7 +121,7 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
 
 ## Phase 2: User features
 
-**Can run in parallel**, one worktree and branch each, merged one at a time.
+The three features are independent of each other, but are built in order (C12 → C13 → C14), each merged before the next starts.
 
 - **2a. View and list** (specs 1.4 and 1.7): the safe profile projector, `GET /users/{id}`, the photo download, `GET /admin/users` with the HMAC keyset cursor and key ring.
 - **2b. Update** (spec 1.5):
@@ -113,7 +137,7 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
   - anonymization with a tombstone
   - the receipt-based status endpoint
 
-The shared projector and storage adapter are best done first in 2a/2b, or agreed up front, so the parallel branches don't each invent their own.
+The shared projector and the storage interface land in 2a, so 2b and 2c build on them.
 
 ## Phase 3: File transformations (Part 2)
 
@@ -124,7 +148,7 @@ The shared projector and storage adapter are best done first in 2a/2b, or agreed
    - history writes
    - the `transformations` permission bootstrap
    - the user-data eraser
-2. **Text and images, in parallel:**
+2. **Text, then images** (independent of each other):
    - 2.1 text: CSV, JSON, XML and YAML in all 12 directions, using papaparse, fast-xml-parser (no DTD) and yaml (safe load)
    - 2.2 images: png→jpeg, jpeg→png, svg→png/jpeg, using sharp and resvg (no network, unsafe SVG rejected)
 3. **History** (spec 2.3, sequential): own and admin history, cursor pagination, 90-day retention.
