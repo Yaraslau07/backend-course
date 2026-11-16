@@ -57,7 +57,12 @@ describe('Route declarations (e2e)', () => {
 
       expect(res.body).toEqual({
         status: 'unavailable',
-        checks: { database: 'up', config: 'up', route_declarations: 'down' },
+        checks: {
+          database: 'up',
+          config: 'up',
+          route_declarations: 'down',
+          smtp: 'up',
+        },
       });
     });
 
