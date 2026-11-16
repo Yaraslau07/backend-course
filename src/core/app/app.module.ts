@@ -5,6 +5,7 @@ import { ConfigModule } from '@/core/config/config.module';
 import { DatabaseModule } from '@/core/database/database.module';
 import { ErrorsModule } from '@/core/errors/errors.module';
 import { HealthModule } from '@/core/health/health.module';
+import { MailModule } from '@/core/mail/mail.module';
 import { RateLimitModule } from '@/core/rate-limit/rate-limit.module';
 import { LoggingModule } from '@/core/logging/logging.module';
 
@@ -21,6 +22,7 @@ import { UsersModule } from '@/modules/users/users.module';
     DatabaseModule,
     HealthModule,
     RateLimitModule,
+    MailModule,
     AuthorizationModule,
     /**
      * Application modules

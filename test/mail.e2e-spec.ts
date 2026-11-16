@@ -92,7 +92,6 @@ describe('MailService (e2e, against Mailpit)', () => {
 });
 
 describe('MailService when SMTP is unreachable (e2e)', () => {
-  const originalPort = process.env.SMTP_PORT;
   let silent: Server;
   let silentPort: number;
 
@@ -106,14 +105,11 @@ describe('MailService when SMTP is unreachable (e2e)', () => {
   });
 
   afterAll(async () => {
-    process.env.SMTP_PORT = originalPort;
     await new Promise((resolve) => silent.close(resolve));
   });
 
-  async function appOnPort(port: number) {
-    process.env.SMTP_PORT = String(port);
-    return createTestApp();
-  }
+  const appOnPort = (port: number) =>
+    createTestApp({ env: { SMTP_PORT: String(port) } });
 
   it.each([
     ['refuses connections', () => 1],

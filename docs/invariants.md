@@ -39,6 +39,7 @@ Shared semantics. Each scenario has **its own HMAC key**.
 - Resend: at most once per 60 s from `last_sent_at` (`429` with the remaining seconds). It replaces `secret_hash`, resets `attempts` and restarts the TTL; the old secret stops working.
 - One outstanding challenge per user per scenario (partial unique index). A new one consumes the old as `replaced`.
 - `consumed_reason`: `confirmed`, `replaced`, `attempts_exhausted`, `user_inactive`, `admin_override`, `email_conflict`, `job_exists`.
+- Mail goes through `MailService.sendChallenge()` (2 s limit). A failure is `MailUnavailableError` (a 503); flows catch it to add the safe fields below (D33).
 - Commit **before** SMTP. If SMTP fails after the commit, return `503` with `confirmationRequired`, `method`, the id and `retryAfterSeconds`, and keep the challenge. The secret is never in a response.
 - Responses: `202 { confirmationRequired: true, method, attemptId|challengeId, expiresInSeconds: 600, resendAfterSeconds: 60 }`.
 - Use claim-then-act for single-use consumption: a conditional `UPDATE … WHERE consumed_at IS NULL`, then check `affected`.

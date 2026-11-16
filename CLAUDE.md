@@ -45,6 +45,7 @@ npm run migration:check     # fails if entities and the migrated DB differ (CI r
 - **Every route needs an access declaration** (`src/core/authorization/route-access.ts`): `@Public()`, `@Internal()`, one `@RequirePermission(permission, action)`, or `@Receipt(header)` with at most one pair. Without one, readiness fails and the route answers 503. Test-only probe routes need one too.
 - **CSRF is in the guard** (`src/core/authorization/csrf.ts`), never in a handler. Don't add a second check, and don't skip it for "safe" writes; if a write must be callable cross-origin, its origin goes into `CORS_ORIGINS`.
 - **Rate limits come from `RATE_LIMIT_POLICIES`** (`src/core/rate-limit/`); never write a number in a feature. Routes use `@RateLimit(name)` (IP-keyed anywhere, user-keyed only on `@RequirePermission` routes); custom limits call `RateLimiter.consume()` / `peek()` / `record()` / `enforce()`. E2E suites that hit limited routes call `resetRateLimits(app)` in `beforeAll`, because the counters persist in `app_test`.
+- **Mail goes through `MailService`** (`src/core/mail/`), never a transport of your own. It throws `MailUnavailableError` (a 503) on failure and logs only the template name; don't log the recipient yourself either.
 - **Permission before lookup:** a protected handler never reads the target resource before RBAC allows it, so the answer is `403`, not `404`.
 
 ## Gotchas
@@ -60,6 +61,7 @@ npm run migration:check     # fails if entities and the migrated DB differ (CI r
 - **Generated migrations need a hand pass.** `migration:generate` emits a shared enum type (`challenge_method`, …) once per table that uses it, so the raw output fails on the second `CREATE TYPE`. Tidy the file, then prove it with `migration:run`, `migration:check`, `migration:revert`, `migration:run`.
 - **Timestamps are `timestamptz(3)`**: declare them with `timestamp()` / `timestampNow()` from `src/database/columns.ts`, never `@UpdateDateColumn` (D12). Set `updated_at = now()` in the write itself.
 - **Log-leak checks:** in an e2e file, create the app with `createTestApp({ logs: new LogCapture() })` once in `beforeAll`, and call `logs.expectNoLeaks(config, [values the test sent])` (D22). Test-only routes go in `test/utils/*-probe.module.ts`, passed via `imports`.
+- **Per-app config in e2e:** `createTestApp({ env: { SMTP_PORT: '1' } })`. Don't change `process.env` between apps in one file: Nest's ConfigModule reads it once per process. Read test mail with `test/utils/mailpit.ts` (`waitForMail(address)`), using a fresh address per test.
 - **E2E shares one persistent database** (`app_test`, which must be named `*_test` or the helpers refuse to connect). Rows other suites commit stay there, so use unique values (random or suite-specific domains) and never assert on global state such as the RBAC version.
 - **Graceful shutdown:** keep `enableShutdownHooks()` (in `configureApp`), and keep the Dockerfile running `node dist/main.js` under `tini`. npm doesn't forward SIGTERM.
 - **The husky pre-push hook runs typecheck and unit tests**; it fails if no `.spec.ts` exists.
@@ -72,5 +74,5 @@ npm run migration:check     # fails if entities and the migrated DB differ (CI r
 - `docs/invariants.md`: shared rules (statuses, lock order, challenge semantics, error codes, safe profile, logging, keys, cookies).
 - `docs/decisions.md`: why things are the way they are (D1, D2, …). Add an entry for every non-obvious choice.
 - `docs/known-gaps.md`: what's deliberately not done yet. Check it first and update it as gaps close.
-- `src/core/`: config, database, logging, errors, rate limits, authorization (route declarations, the global guard), health (the readiness registry) and app bootstrap.
+- `src/core/`: config, database, logging, errors, rate limits, mail, authorization (route declarations, the global guard), health (the readiness registry) and app bootstrap.
 - `src/modules/`: feature modules.
