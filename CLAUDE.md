@@ -70,7 +70,7 @@ npm run migration:check     # fails if entities and the migrated DB differ (CI r
 
 ## Where things live
 
-- `docs/roadmap.md`: the build order (phases, what's done, what's next, what can run in parallel). **Start here when picking up work**, and update its status table when a phase lands.
+- `docs/roadmap.md`: the checkpoints (C0–C20) with their status, the gate each must pass, and the **working agreement** (how a checkpoint is built, reviewed and handed over). **Start here when picking up work**: check `gh pr list --state open` first, then take the first `⏭ next` row. Update the status table when a checkpoint lands.
 - `docs/specs/`: the assignment, verbatim, one file per lesson.
 - `docs/schema.md`: every table, and which spec rule each constraint enforces.
 - `docs/invariants.md`: shared rules (statuses, lock order, challenge semantics, error codes, safe profile, logging, keys, cookies).
