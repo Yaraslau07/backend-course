@@ -148,3 +148,11 @@ From the `/code-review` of C2–C6:
 - **Secrets:** OTPs come from `randomInt` (uniform 000000–999999); magic secrets are 32 random bytes. Both are stored only as `HMAC-SHA256(scenario key, "email-challenge:v1" ‖ scenario ‖ secret)`. Registration finds its challenge by that HMAC, the others by the id in `id.secret`.
 - **Codes:** `invalid_challenge` (400) for not found, expired, wrong, replaced, confirmed or `user_inactive`; `attempts_exhausted` (429); `resend_cooldown` (429, with `retryAfterSeconds`); `challenge_conflict` (409) for `admin_override`, `email_conflict` and `job_exists`. A confirm by a user who is no longer eligible defaults to `401 invalid_session`; login turns it into `invalid_credentials` (C9).
 - **Delivery:** `deliver()` sends after commit. A mail failure becomes the 503 the specs describe (`confirmationRequired`, `method`, the id, `retryAfterSeconds: 60`) and the challenge stays.
+
+## D39: C7 review fixes (2026-11-16, amends D38)
+- **Real time, not transaction time.** TTL, cooldown, `last_sent_at` and `consumed_at` use `clock_timestamp()`. `now()` is frozen at the transaction's start, so a request that waited for the user or challenge lock could accept a challenge that had expired in the meantime, or store a send time in the past.
+- **Exactly 10 minutes is expired** (`age >= 600`): valid until `last_sent_at + 10 minutes`, not through it.
+- **An ineligible user's confirm is `400 invalid_challenge`**, the same as resend and as spec 1.0 lists for registration. Flows with a session or a login answer remap `reason: 'user_inactive'`: login to `401 invalid_credentials` (spec 1.2), email change to `401 invalid_session` (spec 1.5), deletion to `401` (spec 1.6).
+- **Exhaustion is logged as its own event** (`exhausted`); the client still gets the 400 the spec gives the 5th wrong code.
+- **`newEmail` is checked:** required for an email change and refused elsewhere. Getting it wrong is a programming error, so it throws plainly.
+- **Not changed:** without the user lock, two concurrent `issue()` calls for a user with no outstanding challenge both insert, and the partial unique index refuses the second. That error reaches the filter as `409 conflict` (D20), not a 500. Flows always take the user lock first, so they never see it.

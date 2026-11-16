@@ -232,6 +232,25 @@ describe('Email challenge engine (e2e)', () => {
     },
   );
 
+  it('refuses an email change without a target address, and a target address anywhere else', async () => {
+    const user = await createUser();
+
+    await expect(
+      withUserLock(user.id, (m) =>
+        engine.issue(m, 'email_change', { userId: user.id, method: 'otp' }),
+      ),
+    ).rejects.toThrow('newEmail is required');
+    await expect(
+      withUserLock(user.id, (m) =>
+        engine.issue(m, 'login', {
+          userId: user.id,
+          method: 'otp',
+          newEmail: 'x@example.com',
+        }),
+      ),
+    ).rejects.toThrow('newEmail is required');
+  });
+
   it('keeps the method the challenge was created with', async () => {
     const user = await createUser();
     const challenge = await issued('login', user.id, 'magic_link');
@@ -361,6 +380,19 @@ describe('Email challenge engine (e2e)', () => {
       expect(await row('login', challenge.id)).toMatchObject({ attempts: 0 });
     });
 
+    it('treats exactly 10 minutes as expired', async () => {
+      const user = await createUser();
+      const challenge = await issued('login', user.id);
+      await age('login', challenge.id, 600);
+
+      expect(
+        await confirm('login', {
+          challengeId: challenge.id,
+          code: challenge.secret,
+        }),
+      ).toMatchObject({ ok: false, reason: 'expired' });
+    });
+
     it('accepts a challenge just inside the window', async () => {
       const user = await createUser();
       const challenge = await issued('login', user.id);
@@ -434,7 +466,7 @@ describe('Email challenge engine (e2e)', () => {
         ),
       ).toMatchObject({
         ok: false,
-        code: 'invalid_session',
+        code: 'invalid_challenge',
         reason: 'user_inactive',
       });
       expect(await row('login', challenge.id)).toMatchObject({
@@ -725,6 +757,7 @@ describe('Email challenge engine (e2e)', () => {
         expect(event.challengeId).toBeUndefined();
     }
     expect(events.some((e) => e.event === 'issued')).toBe(true);
+    expect(events.some((e) => e.event === 'exhausted')).toBe(true);
     expect(events.some((e) => e.event === 'confirm_rejected')).toBe(true);
   });
 });

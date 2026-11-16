@@ -57,7 +57,15 @@ function managerWith(
     if (sql.startsWith('SELECT user_id')) {
       return Promise.resolve(row ? [{ user_id: row.user_id ?? USER }] : []);
     }
-    if (sql.startsWith('INSERT')) return Promise.resolve([{ id: ID }]);
+    if (sql.trimStart().startsWith('INSERT'))
+      return Promise.resolve([{ id: ID }]);
+    if (sql.includes('RETURNING consumed_reason')) {
+      const exhausted = (row?.attempts ?? 0) + 1 >= 5;
+      return Promise.resolve([
+        [{ consumed_reason: exhausted ? 'attempts_exhausted' : null }],
+        1,
+      ]);
+    }
     return Promise.resolve([[], 1]);
   });
   return { manager: { query } as unknown as EntityManager, statements };
@@ -191,9 +199,24 @@ describe('ChallengeEngine decisions', () => {
 
       expect(outcome).toMatchObject({
         ok: false,
-        error: { code: 'invalid_session', reason: 'user_inactive' },
+        error: { code: 'invalid_challenge', reason: 'user_inactive' },
       });
       expect(updates(statements)[0].params).toEqual([ID, 'user_inactive']);
+    });
+
+    it('logs the 5th wrong code as an exhaustion, and still answers 400', async () => {
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      const { manager } = managerWith({ secret: '123456', attempts: 4 });
+
+      const outcome = await engine.confirm(manager, 'login', otp('654321'));
+
+      expect(outcome).toMatchObject({
+        ok: false,
+        error: { code: 'invalid_challenge', reason: 'wrong_secret' },
+      });
+      expect(
+        log.mock.calls.map((call) => (call[0] as { event: string }).event),
+      ).toEqual(['exhausted', 'confirm_rejected']);
     });
 
     it('does not count a wrong magic-link token', async () => {
@@ -275,6 +298,21 @@ describe('ChallengeEngine decisions', () => {
       expect(updates(statements)[0].params).toEqual([ID, 'replaced']);
     });
 
+    it('refuses a target address outside email change, and its absence inside it', async () => {
+      const { manager } = managerWith(undefined);
+
+      await expect(
+        engine.issue(manager, 'email_change', { userId: USER, method: 'otp' }),
+      ).rejects.toThrow('newEmail is required');
+      await expect(
+        engine.issue(manager, 'login', {
+          userId: USER,
+          method: 'otp',
+          newEmail: 'x@example.com',
+        }),
+      ).rejects.toThrow('newEmail is required');
+    });
+
     it('stores the target address for an email change', async () => {
       const { manager, statements } = managerWith(undefined);
 
@@ -284,7 +322,9 @@ describe('ChallengeEngine decisions', () => {
         newEmail: 'new@example.com',
       });
 
-      const insert = statements.find((s) => s.sql.startsWith('INSERT'));
+      const insert = statements.find((s) =>
+        s.sql.trimStart().startsWith('INSERT'),
+      );
       expect(insert?.sql).toContain('new_email');
       expect(insert?.params[3]).toBe('new@example.com');
     });

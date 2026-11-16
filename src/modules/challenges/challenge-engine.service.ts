@@ -174,12 +174,20 @@ export class ChallengeEngine {
       await this.claim(manager, scenario, previous.id, 'replaced');
     }
 
+    if ((scenario === 'email_change') !== (input.newEmail !== undefined)) {
+      // A programming error, not a client one: only an email change has a target address.
+      throw new Error('newEmail is required for email_change and only for it');
+    }
+
     const secret = this.newSecret(input.method);
     const hash = this.hash(scenario, secret);
+    // clock_timestamp(), not now(): now() is the transaction's start, which may be before a lock wait.
     const [created] = await manager.query<{ id: string }[]>(
       scenario === 'email_change'
-        ? `INSERT INTO ${table} (user_id, method, secret_hash, new_email) VALUES ($1, $2, $3, $4) RETURNING id`
-        : `INSERT INTO ${table} (user_id, method, secret_hash) VALUES ($1, $2, $3) RETURNING id`,
+        ? `INSERT INTO ${table} (user_id, method, secret_hash, new_email, last_sent_at, created_at)
+           VALUES ($1, $2, $3, $4, clock_timestamp(), clock_timestamp()) RETURNING id`
+        : `INSERT INTO ${table} (user_id, method, secret_hash, last_sent_at, created_at)
+           VALUES ($1, $2, $3, clock_timestamp(), clock_timestamp()) RETURNING id`,
       scenario === 'email_change'
         ? [input.userId, input.method, hash, input.newEmail]
         : [input.userId, input.method, hash],
@@ -232,7 +240,7 @@ export class ChallengeEngine {
 
     const secret = this.newSecret(challenge.method);
     await manager.query(
-      `UPDATE ${table} SET secret_hash = $2, attempts = 0, last_sent_at = now() WHERE id = $1`,
+      `UPDATE ${table} SET secret_hash = $2, attempts = 0, last_sent_at = clock_timestamp() WHERE id = $1`,
       [challenge.id, this.hash(scenario, secret)],
     );
     this.event(scenario, 'resent', {
@@ -247,7 +255,8 @@ export class ChallengeEngine {
 
   /**
    * Checks a secret, in the spec's order: found and owned → not consumed → right method →
-   * not expired (no attempt counted) → user still eligible → HMAC in constant time. A wrong OTP
+   * not expired (no attempt counted) → user still eligible → HMAC in constant time. Times are
+   * read with clock_timestamp(), so a wait for the row lock still counts towards the TTL. A wrong OTP
    * counts an attempt; the 5th wrong one consumes the challenge as `attempts_exhausted`.
    * On success nothing is consumed yet: the flow acts, then `claim()`s with its reason.
    */
@@ -262,11 +271,6 @@ export class ChallengeEngine {
       ? { challengeId: input.challengeId }
       : { token: input.token };
     const located = this.locate(scenario, ref);
-    const secret = byCode
-      ? input.code
-      : located && 'secret' in located
-        ? (located.secret ?? '')
-        : '';
     if (!located || (byCode && !OTP.test(input.code))) {
       return this.rejected(
         scenario,
@@ -291,6 +295,8 @@ export class ChallengeEngine {
     if (refusal) return this.rejected(scenario, 'confirm_rejected', refusal);
     const challenge = row!;
     const ids = { challengeId: challenge.id };
+    // A token always carries its secret (locate() only returns one without it for an OTP id).
+    const secret = byCode ? input.code : located.secret!;
 
     if (challenge.method !== (byCode ? 'otp' : 'magic_link')) {
       return this.rejected(
@@ -300,7 +306,8 @@ export class ChallengeEngine {
         ids,
       );
     }
-    if (challenge.age > CHALLENGE_TTL_SECONDS) {
+    // Valid until last_sent_at + 10 minutes, so exactly 600 s is already expired.
+    if (challenge.age >= CHALLENGE_TTL_SECONDS) {
       return this.rejected(
         scenario,
         'confirm_rejected',
@@ -313,22 +320,32 @@ export class ChallengeEngine {
       return this.rejected(
         scenario,
         'confirm_rejected',
-        reject('invalid_session', 'user_inactive'),
+        // 400 like every other dead challenge (spec 1.0); flows with a session or a login answer
+        // remap the reason: login → 401 invalid_credentials, email change → 401 invalid_session.
+        reject('invalid_challenge', 'user_inactive'),
         ids,
       );
     }
 
     if (!secretsEqual(this.hash(scenario, secret), challenge.secret_hash)) {
       if (challenge.method === 'otp') {
-        await manager.query(
+        const [[counted]] = await manager.query<
+          [{ consumed_reason: string | null }[], number]
+        >(
           `UPDATE ${table}
               SET attempts = attempts + 1,
-                  consumed_at = CASE WHEN attempts + 1 >= $2 THEN now() END,
+                  consumed_at = CASE WHEN attempts + 1 >= $2 THEN clock_timestamp() END,
                   consumed_reason = CASE WHEN attempts + 1 >= $2
                                          THEN 'attempts_exhausted'::challenge_consumed_reason END
-            WHERE id = $1`,
+            WHERE id = $1
+        RETURNING consumed_reason`,
           [challenge.id, CHALLENGE_MAX_ATTEMPTS],
         );
+        // Still a 400 to the client (spec: "the fifth incorrect entry returns an incorrect-code
+        // error"), but exhaustion is its own event in the log (spec 1.2 §1.5).
+        if (counted?.consumed_reason === 'attempts_exhausted') {
+          this.event(scenario, 'exhausted', ids);
+        }
       }
       return this.rejected(
         scenario,
@@ -364,13 +381,15 @@ export class ChallengeEngine {
     challengeId: string,
     reason: ChallengeConsumedReason,
   ): Promise<boolean> {
-    const { table } = CHALLENGE_SCENARIOS[scenario];
-    const [, affected] = await manager.query<[unknown, number]>(
-      `UPDATE ${table} SET consumed_at = now(), consumed_reason = $2
-        WHERE id = $1 AND consumed_at IS NULL`,
-      [challengeId, reason],
+    return (
+      (await this.consume(
+        manager,
+        scenario,
+        `id = $1`,
+        challengeId,
+        reason,
+      )) === 1
     );
-    return affected === 1;
   }
 
   /** Consumes the user's outstanding challenge, if any (blocking, admin email change, deletion). */
@@ -380,13 +399,7 @@ export class ChallengeEngine {
     userId: string,
     reason: ChallengeConsumedReason,
   ): Promise<number> {
-    const { table } = CHALLENGE_SCENARIOS[scenario];
-    const [, affected] = await manager.query<[unknown, number]>(
-      `UPDATE ${table} SET consumed_at = now(), consumed_reason = $2
-        WHERE user_id = $1 AND consumed_at IS NULL`,
-      [userId, reason],
-    );
-    return affected;
+    return this.consume(manager, scenario, `user_id = $1`, userId, reason);
   }
 
   /** The 202 body for an issued or resent challenge. Never contains the secret. */
@@ -429,6 +442,23 @@ export class ChallengeEngine {
 
   /* ---------- internals ---------- */
 
+  /** The one conditional consume: only outstanding rows, so a challenge is used once. */
+  private async consume(
+    manager: EntityManager,
+    scenario: ChallengeScenario,
+    where: string,
+    value: string,
+    reason: ChallengeConsumedReason,
+  ): Promise<number> {
+    const { table } = CHALLENGE_SCENARIOS[scenario];
+    const [, affected] = await manager.query<[unknown, number]>(
+      `UPDATE ${table} SET consumed_at = clock_timestamp(), consumed_reason = $2
+        WHERE ${where} AND consumed_at IS NULL`,
+      [value, reason],
+    );
+    return affected;
+  }
+
   /** A request's reference in a form we can query by, or null if it is malformed. */
   private locate(
     scenario: ChallengeScenario,
@@ -460,7 +490,7 @@ export class ChallengeEngine {
       scenario === 'email_change' ? 'new_email' : 'NULL::text AS new_email';
     const rows = await manager.query<ChallengeRow[]>(
       `SELECT id, user_id, method, secret_hash, attempts, consumed_reason, ${newEmail},
-              extract(epoch FROM now() - last_sent_at)::float8 AS age
+              extract(epoch FROM clock_timestamp() - last_sent_at)::float8 AS age
          FROM ${table} WHERE ${where} LIMIT 1 FOR UPDATE`,
       params,
     );
