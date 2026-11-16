@@ -12,6 +12,7 @@ import { LoggingModule } from '@/core/logging/logging.module';
 /**
  * Application modules
  */
+import { ChallengesModule } from '@/modules/challenges/challenges.module';
 import { UsersModule } from '@/modules/users/users.module';
 
 @Module({
@@ -27,6 +28,7 @@ import { UsersModule } from '@/modules/users/users.module';
     /**
      * Application modules
      */
+    ChallengesModule,
     UsersModule,
   ],
 })

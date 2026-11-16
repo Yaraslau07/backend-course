@@ -39,6 +39,7 @@ Shared semantics. Each scenario has **its own HMAC key**.
 - Resend: at most once per 60 s from `last_sent_at` (`429` with the remaining seconds). It replaces `secret_hash`, resets `attempts` and restarts the TTL; the old secret stops working.
 - One outstanding challenge per user per scenario (partial unique index). A new one consumes the old as `replaced`.
 - `consumed_reason`: `confirmed`, `replaced`, `attempts_exhausted`, `user_inactive`, `admin_override`, `email_conflict`, `job_exists`.
+- All of this is `ChallengeEngine` (D38): the flow locks the user, the engine locks the challenge, refusals come back as an `Outcome` so counted attempts commit.
 - Mail goes through `MailService.sendChallenge()` (2 s limit). A failure is `MailUnavailableError` (a 503); flows catch it to add the safe fields below (D33).
 - Commit **before** SMTP. If SMTP fails after the commit, return `503` with `confirmationRequired`, `method`, the id and `retryAfterSeconds`, and keep the challenge. The secret is never in a response.
 - Responses: `202 { confirmationRequired: true, method, attemptId|challengeId, expiresInSeconds: 600, resendAfterSeconds: 60 }`.
@@ -65,6 +66,10 @@ access cookie → current user is `active` → CSRF (cross-origin writes) → RB
 | 403 | `csrf_rejected` | cross-origin write without an exact Origin and `X-CSRF-Protection: 1` |
 | 403 | `self_confirmation_required` | admin `DELETE /users/{own id}` |
 | 400 | `invalid_cursor` | any cursor problem, no details |
+| 400 | `invalid_challenge` | challenge not found, expired, wrong secret, replaced, confirmed or consumed as `user_inactive` |
+| 409 | `challenge_conflict` | challenge consumed as `admin_override`, `email_conflict` or `job_exists` |
+| 429 | `attempts_exhausted` | the 5th wrong OTP already consumed the challenge |
+| 429 | `resend_cooldown` | a new email within 60 s of the last send (`retryAfterSeconds`) |
 | 409 | `file_not_ready` | download while `storageStatus=pending` |
 | 503 | `authorization_unavailable` | user DB, RBAC snapshot or route config unavailable |
 

@@ -11,8 +11,8 @@ The order the assignment is being built in, and why. Update the status column as
 | C4. CSRF guard | 1b | 1.2, 1.3 | ✅ done |
 | C5. Throttling | 1b | 1.0–1.7, 2.3 | ✅ done |
 | C6. MailService | 1b | 1.0, 1.2, 1.5, 1.6 | ✅ done |
-| C7. Email challenge engine | 1c | 1.0, 1.2, 1.5, 1.6 | ⏭ next |
-| C8. Registration | 1c | 1.0 | pending |
+| C7. Email challenge engine | 1c | 1.0, 1.2, 1.5, 1.6 | ✅ done |
+| C8. Registration | 1c | 1.0 | ⏭ next |
 | C9. Authentication | 1c | 1.2 | pending |
 | C10. RBAC | 1c | 1.1 | pending |
 | C11. Authorization chain | 1c | 1.3 | pending |
@@ -86,11 +86,11 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
 4. ✅ **Throttling** (C5, D29–D32): every spec limit as a named policy; exact sliding windows in Postgres with HMAC keys; `@RateLimit()` for IP-keyed limits on routes, `RateLimiter` for custom ones; cleanup every 5 minutes.
 5. ✅ **MailService** (C6, D33–D36): nodemailer with a 2 s limit, OTP and magic-link templates (token in the URL fragment), an `smtp` readiness check. Tests read mail through the Mailpit API.
 
-## Phase 1c: Core auth and access
+## Phase 1c: Core auth and access ⏭
 
 **Sequential.** Each step depends on the previous one.
 
-1. **Email challenge engine:** one generic implementation, configured per scenario (HMAC key, table, method). It covers:
+1. ✅ **Email challenge engine** (C7, D38): one generic implementation, configured per scenario (HMAC key, table, method). It covers:
    - issue, resend, confirm
    - HMAC-SHA256 with a constant-time comparison
    - 5 attempts, where the 5th can still succeed
