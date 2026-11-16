@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/unbound-method -- handlers are read as metadata targets, never called */
 import { Controller, Get } from '@nestjs/common';
 
+import { RateLimit } from '@/core/rate-limit/rate-limit.decorator';
+
 import {
   getRouteAccess,
   Internal,
@@ -145,6 +147,21 @@ describe('decorators', () => {
     @Get('f')
     @Internal()
     f() {}
+
+    @Get('g')
+    @Public()
+    @RateLimit('users_list_user')
+    g() {}
+
+    @Get('h')
+    @RequirePermission('things', 'read')
+    @RateLimit('users_list_user', 'users_list_ip')
+    h() {}
+
+    @Get('i')
+    @Public()
+    @RateLimit('login_ip')
+    i() {}
   }
   const proto = ThingsController.prototype;
 
@@ -173,6 +190,15 @@ describe('decorators', () => {
       reason: 'missing',
     });
     expect(getRouteAccess(proto.f)).toEqual({ kind: 'internal' });
+  });
+
+  it('refuse a user-keyed limit on a route that has no session to key it by', () => {
+    expect(getRouteAccess(proto.g)).toEqual({
+      kind: 'invalid',
+      reason: 'user_limit_without_session',
+    });
+    expect(getRouteAccess(proto.h)).toMatchObject({ kind: 'protected' });
+    expect(getRouteAccess(proto.i)).toEqual({ kind: 'public' });
   });
 
   it('mark protected routes with the cookie security scheme for OpenAPI, and public ones not', () => {

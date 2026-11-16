@@ -7,6 +7,7 @@ import {
 import type { FastifyRequest } from 'fastify';
 
 import { AppException } from '@/core/errors/app.exception';
+import { RateLimiter } from '@/core/rate-limit/rate-limiter.service';
 
 import { CsrfPolicy } from './csrf';
 import { getRouteAccess } from './route-access';
@@ -20,9 +21,13 @@ import { getRouteAccess } from './route-access';
 export class RouteAccessGuard implements CanActivate {
   private readonly logger = new Logger('Authorization');
 
-  constructor(private readonly csrf: CsrfPolicy) {}
+  constructor(
+    private readonly csrf: CsrfPolicy,
+    private readonly limiter: RateLimiter,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  // eslint-disable-next-line @typescript-eslint/require-await -- stub, replaced by the implementation commit
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     if (context.getType() !== 'http') return true;
 
     const access = getRouteAccess(context.getHandler());

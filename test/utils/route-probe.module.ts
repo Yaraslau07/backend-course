@@ -6,6 +6,7 @@ import {
   Receipt,
   RequirePermission,
 } from '@/core/authorization/route-access';
+import { RateLimit } from '@/core/rate-limit/rate-limit.decorator';
 
 /** How many times each probe handler actually ran; a refused request must leave it unchanged. */
 export const calls: Record<string, number> = {};
@@ -54,6 +55,21 @@ class RouteProbeController {
     return ran('receipt-or-pair');
   }
 
+  /** 30 per minute per IP (the refresh policy, borrowed for the probe). */
+  @Post('limited')
+  @Public()
+  @RateLimit('refresh_ip')
+  limited() {
+    return ran('limited');
+  }
+
+  @Get('user-limit-on-public')
+  @Public()
+  @RateLimit('users_list_user')
+  userLimitOnPublic() {
+    return ran('user-limit-on-public');
+  }
+
   @Get('missing')
   missing() {
     return ran('missing');
@@ -89,4 +105,8 @@ export const INVALID_PROBE_ROUTES = [
   { route: 'GET /__routes/public-and-pair', reason: 'conflict' },
   { route: 'GET /__routes/two-pairs', reason: 'conflict' },
   { route: 'GET /__routes/bad-name', reason: 'invalid_name' },
+  {
+    route: 'GET /__routes/user-limit-on-public',
+    reason: 'user_limit_without_session',
+  },
 ];

@@ -23,7 +23,14 @@ export type RouteAccess =
       header: string;
       pair?: { permission: string; action: string };
     }
-  | { kind: 'invalid'; reason: 'missing' | 'conflict' | 'invalid_name' };
+  | {
+      kind: 'invalid';
+      reason:
+        | 'missing'
+        | 'conflict'
+        | 'invalid_name'
+        | 'user_limit_without_session';
+    };
 
 type Declaration =
   | { kind: 'public' }

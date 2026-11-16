@@ -5,7 +5,6 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ThrottlerException } from '@nestjs/throttler';
 import type { ValidationError } from 'class-validator';
 import { QueryFailedError } from 'typeorm';
 
@@ -174,7 +173,7 @@ describe('toErrorResponse()', () => {
     [new UnauthorizedException('details'), 401, 'invalid_session'],
     [new ForbiddenException('details'), 403, 'forbidden'],
     [new NotFoundException('Cannot GET /x?q=secret'), 404, 'not_found'],
-    [new ThrottlerException(), 429, 'too_many_requests'],
+    [new HttpException('x', 429), 429, 'too_many_requests'],
     [new HttpException('x', 409), 409, 'conflict'],
     [new HttpException('x', 413), 413, 'payload_too_large'],
     [new HttpException('x', 415), 415, 'unsupported_media_type'],
