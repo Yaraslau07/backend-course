@@ -27,6 +27,10 @@ A running list of what's still outstanding. Check it before assuming something i
 ## Rate limits
 - `TRUST_PROXY` must be `true` behind a reverse proxy, or every client shares the proxy's IP budget. It must stay `false` when the app is reachable directly, or a client can pick its own IP with `X-Forwarded-For`.
 
+## Email challenges
+- The engine exists, but no flow uses it yet: registration (C8), login (C9), email change (C13) and deletion (C14) wire it in.
+- `resend_cooldown` is a 429 like the spec says; the 5-emails-per-user-per-hour limits for email change and deletion (`email_change_emails`, `deletion_challenge_emails`) are applied by those flows, not the engine.
+
 ## Mail
 - Magic-link pages (`/auth/register/confirm`, …) belong to a frontend this project doesn't have (D35). To try a link flow, take the token from the mail in Mailpit (http://localhost:8025) and POST it yourself.
 - The `smtp` readiness check is informational (D37): an SMTP outage shows as `smtp: down` while `status` stays `ok`. Alert on the check itself if mail matters to you.

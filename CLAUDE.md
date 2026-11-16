@@ -46,6 +46,7 @@ npm run migration:check     # fails if entities and the migrated DB differ (CI r
 - **CSRF is in the guard** (`src/core/authorization/csrf.ts`), never in a handler. Don't add a second check, and don't skip it for "safe" writes; if a write must be callable cross-origin, its origin goes into `CORS_ORIGINS`.
 - **Rate limits come from `RATE_LIMIT_POLICIES`** (`src/core/rate-limit/`); never write a number in a feature. Routes use `@RateLimit(name)` (IP-keyed anywhere, user-keyed only on `@RequirePermission` routes); custom limits call `RateLimiter.consume()` / `release()` / `peek()` / `enforce()` (failure-only: `consume()` before the attempt, `release()` on success). E2E suites that hit limited routes call `resetRateLimits(app)` in `beforeAll`, because the counters persist in `app_test`.
 - **Mail goes through `MailService`** (`src/core/mail/`), never a transport of your own. It throws `MailUnavailableError` (a 503) on failure and logs only the template name; don't log the recipient yourself either.
+- **Email challenges go through `ChallengeEngine`** (`src/modules/challenges/`). In one transaction: `findUserId()` (unlocked), lock the user row, call the engine, `claim()` on success; commit; then `throw outcome.error` if it refused, and `deliver()` mail last. Never throw inside the transaction for a wrong OTP: the counted attempt must commit (D38).
 - **Permission before lookup:** a protected handler never reads the target resource before RBAC allows it, so the answer is `403`, not `404`.
 
 ## Gotchas
