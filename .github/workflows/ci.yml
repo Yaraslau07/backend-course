@@ -1,0 +1,193 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # --max-warnings 0 instead of --fix: CI must fail on lint problems, not rewrite them.
+      - run: npx eslint "{src,test}/**/*.ts" --max-warnings 0
+      - run: npm run typecheck
+
+  unit-tests:
+    name: Unit Tests (coverage >= 80%)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # The 80% threshold lives in package.json (jest.coverageThreshold); a drop fails this step.
+      - run: npm run test:cov
+        env:
+          CI: true
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
+
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d app_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    # Everything else comes from the committed .env.test (test-only keys).
+    env:
+      CI: true
+      NODE_ENV: test
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Run migrations
+        run: npm run migration:run
+      - run: npm run test:e2e
+
+  docker-build:
+    name: Docker Build & Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Build image (no push)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: backend-course:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Start Postgres for the container
+        run: |
+          docker network create ci
+          docker run -d --name pg --network ci -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=app postgres:18-alpine
+          for i in $(seq 1 30); do docker exec pg pg_isready -U postgres -d app && break; sleep 2; done
+      - name: Run the image with a production env and fresh keys
+        run: |
+          node scripts/generate-keys.mjs > keys.env
+          cat > app.env <<'ENV'
+          PUBLIC_API_BASE_URL=https://api.example.test
+          FRONTEND_URL=https://app.example.test
+          CORS_ORIGINS=https://app.example.test
+          COOKIE_SECURE=true
+          POSTGRES_HOST=pg
+          POSTGRES_PORT=5432
+          POSTGRES_USER=postgres
+          POSTGRES_PASSWORD=postgres
+          POSTGRES_DB=app
+          JWT_ISSUER=backend-course
+          JWT_AUDIENCE=backend-course-api
+          SMTP_HOST=localhost
+          SMTP_PORT=1025
+          MAIL_FROM=Backend Course <no-reply@example.test>
+          ENV
+          sed -i 's/^ *//' app.env
+          docker run -d --name app --network ci --env-file app.env --env-file keys.env -p 3007:3007 backend-course:ci
+      - name: Liveness and readiness must pass (hard check)
+        run: |
+          for i in $(seq 1 30); do curl -sf http://localhost:3007/health/live && break; sleep 2; done
+          curl -sf http://localhost:3007/health/live
+          # Readiness is IP-gated to loopback, so ask from inside the container.
+          docker exec app wget -qO- http://127.0.0.1:3007/health/ready
+          # From outside it must look like it doesn't exist.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3007/health/ready)" = "404"
+      - name: Container logs
+        if: always()
+        run: docker logs app || true
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm audit --omit=dev --audit-level=high
+
+  docker-scan:
+    name: Docker Image Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [docker-build]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Build image for scan
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: backend-course:scan
+          cache-from: type=gha
+      - name: Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: backend-course:scan
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+  pr-title:
+    name: PR Title Check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: amannn/action-semantic-pull-request@0723387faaf9b38adef4775cd42cfd5155ed6017 # v5.5.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

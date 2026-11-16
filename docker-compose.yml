@@ -1,22 +1,30 @@
+# Local dependencies only; the app itself runs with `npm run start:dev`.
 services:
   postgres:
     image: postgres:18-alpine
-    container_name: mnt-postgres
-    env_file:
-      - .env
+    container_name: backend-course-postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
     ports:
-      - "${POSTGRES_PORT}:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-app}"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Catches every outgoing email. Web UI: http://localhost:8025, API used by e2e tests later.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    container_name: backend-course-mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
 
 volumes:
   postgres_data:

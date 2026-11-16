@@ -1,31 +1,29 @@
 import 'reflect-metadata';
-import 'dotenv/config';
 
+import { config as loadEnv } from 'dotenv';
 import { DataSource } from 'typeorm';
 
+import { buildDataSourceOptions } from './typeorm.options';
+
 /**
- * Standalone TypeORM DataSource used by the TypeORM CLI
- * (migration:generate, migration:run, migration:revert, etc.).
- *
- * The Nest runtime uses the DataSource built inside `DatabaseModule`;
- * this file exists solely so the CLI can load the same connection
- * settings from .env without booting the whole Nest application.
+ * Standalone DataSource for the TypeORM CLI (migration:generate, migration:run, …).
+ * The Nest runtime builds its own from `DatabaseModule` using the same `buildDataSourceOptions()`.
+ * Only the DB variables are needed here, so the CLI doesn't require the app's secrets.
  */
-export const dataSource = new DataSource({
-  type: 'postgres',
-  host: process.env.POSTGRES_HOST,
-  port: Number(process.env.POSTGRES_PORT),
-  username: process.env.POSTGRES_USER,
-  password: process.env.POSTGRES_PASSWORD,
-  database: process.env.POSTGRES_DB,
-
-  entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-
-  migrationsTableName: 'migrations',
-  migrations: [__dirname + '/migrations/*.migration{.ts,.js}'],
-
-  synchronize: false,
-  logging: process.env.POSTGRES_LOGGING === 'true',
+loadEnv({
+  path: process.env.NODE_ENV === 'test' ? '.env.test' : '.env',
+  quiet: true,
 });
 
-export default dataSource;
+// Exactly one export: the TypeORM CLI refuses a file exporting more than one DataSource.
+export default new DataSource(
+  buildDataSourceOptions({
+    host: process.env.POSTGRES_HOST ?? 'localhost',
+    port: Number(process.env.POSTGRES_PORT ?? 5432),
+    username: process.env.POSTGRES_USER ?? '',
+    password: process.env.POSTGRES_PASSWORD ?? '',
+    database: process.env.POSTGRES_DB ?? '',
+    logging: process.env.POSTGRES_LOGGING === 'true',
+    migrationsRun: false,
+  }),
+);
