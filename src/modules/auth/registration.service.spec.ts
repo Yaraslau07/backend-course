@@ -11,6 +11,8 @@ import {
   ChallengeRejected,
 } from '@/modules/challenges/challenge-engine.service';
 
+import type { RbacAuthorizer } from '@/modules/rbac/rbac-authorizer';
+
 import { RegistrationConfirmDto } from './dto/registration-confirm.dto';
 import { RegistrationResendDto } from './dto/registration-resend.dto';
 import type { PasswordHasher } from './password-hasher';
@@ -86,13 +88,15 @@ function setup(
     deliver: jest.fn().mockResolvedValue(undefined),
     accepted: jest.fn().mockReturnValue({ confirmationRequired: true }),
   };
+  const rbac = { assignDefaultRole: jest.fn().mockResolvedValue(undefined) };
   const service = new RegistrationService(
     db,
     config,
     hasher,
     engine as unknown as ChallengeEngine,
+    rbac as unknown as RbacAuthorizer,
   );
-  return { service, engine, query };
+  return { service, engine, query, rbac };
 }
 
 const uniqueViolation = (constraint: string) =>

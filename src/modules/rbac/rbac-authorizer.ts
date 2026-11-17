@@ -1,12 +1,12 @@
-/* eslint-disable @typescript-eslint/no-unused-vars -- signature-only stub, implemented in the feat commit */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, type EntityManager } from 'typeorm';
 
-import { RbacPolicyStore } from './rbac-policy.store';
+import { AppException } from '@/core/errors/app.exception';
+import { classifyDbError } from '@/core/errors/db-errors';
 
-/** The role every user gets on activation (spec 1.0, 1.1). */
-export const DEFAULT_ROLE = 'user';
+import { RbacPolicyStore } from './rbac-policy.store';
+import { DEFAULT_ROLE } from './rbac.types';
 
 /**
  * Spec 1.1 §1.3.1: `authorize(userId, permission, action)` for the route guard, and the default
@@ -14,25 +14,80 @@ export const DEFAULT_ROLE = 'user';
  */
 @Injectable()
 export class RbacAuthorizer {
+  private readonly logger = new Logger('Rbac');
+
   constructor(
     @InjectDataSource() private readonly db: DataSource,
     private readonly store: RbacPolicyStore,
   ) {}
 
-  /** Resolves when allowed; `403 permission_denied`, or `503 authorization_unavailable`. */
-  authorize(
-    _userId: string,
-    _permission: string,
-    _action: string,
+  /**
+   * Resolves when one of the user's current roles allows the pair; otherwise `403
+   * permission_denied`, with nothing about roles or the target in the answer. `503
+   * authorization_unavailable` when the policy or the user's roles can't be read.
+   */
+  async authorize(
+    userId: string,
+    permission: string,
+    action: string,
   ): Promise<void> {
-    throw new Error('not implemented');
+    const snapshot = await this.store.current();
+    let roleIds: string[];
+    try {
+      roleIds = (
+        await this.db.query<{ role_id: string }[]>(
+          `SELECT role_id FROM user_roles WHERE user_id = $1`,
+          [userId],
+        )
+      ).map((row) => row.role_id);
+    } catch (error) {
+      if (classifyDbError(error)?.kind !== 'unavailable') throw error;
+      this.logger.error(
+        { event: 'access_check', category: 'database', actorUserId: userId },
+        'user roles unavailable',
+      );
+      throw new AppException('authorization_unavailable');
+    }
+
+    const decision = snapshot.allows(roleIds, permission, action);
+    if (decision === 'allowed') return;
+    this.logger.warn(
+      {
+        event: 'access_denied',
+        actorUserId: userId,
+        permission,
+        action,
+        reason: decision,
+        version: snapshot.version,
+      },
+      'access denied by RBAC',
+    );
+    throw new AppException('permission_denied');
   }
 
   /**
    * In the activating transaction: gives the user the `user` role if they don't have it yet.
-   * No version bump: user roles are not in the snapshot (D45).
+   * No version bump: user roles are read per request, not cached in the snapshot (D45). Before the
+   * bootstrap there is no `user` role; the bootstrap then gives it to every active user.
    */
-  assignDefaultRole(_manager: EntityManager, _userId: string): Promise<void> {
-    throw new Error('not implemented');
+  async assignDefaultRole(
+    manager: EntityManager,
+    userId: string,
+  ): Promise<void> {
+    const assigned = await manager.query<{ user_id: string }[]>(
+      `INSERT INTO user_roles (user_id, role_id)
+       SELECT $1, id FROM roles WHERE name = $2
+       ON CONFLICT DO NOTHING
+       RETURNING user_id`,
+      [userId, DEFAULT_ROLE],
+    );
+    this.logger.log(
+      {
+        event: 'default_role',
+        userId,
+        result: assigned.length === 1 ? 'assigned' : 'unchanged',
+      },
+      'default role on activation',
+    );
   }
 }

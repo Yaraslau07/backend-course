@@ -11,6 +11,7 @@ import {
   type IssuedChallenge,
   type Outcome,
 } from '@/modules/challenges/challenge-engine.service';
+import { RbacAuthorizer } from '@/modules/rbac/rbac-authorizer';
 
 import type { RegisterDto } from './dto/register.dto';
 import type { RegistrationConfirmDto } from './dto/registration-confirm.dto';
@@ -45,6 +46,7 @@ export class RegistrationService {
     private readonly config: ConfigService,
     private readonly hasher: PasswordHasher,
     private readonly challenges: ChallengeEngine,
+    private readonly rbac: RbacAuthorizer,
   ) {}
 
   async register(dto: RegisterDto): Promise<RegistrationResult> {
@@ -61,7 +63,11 @@ export class RegistrationService {
           passwordHash,
           confirm ? 'pending' : 'active',
         );
-        if (!confirm) return { id };
+        // Active at once: the `user` role comes in the same transaction (spec 1.1).
+        if (!confirm) {
+          await this.rbac.assignDefaultRole(manager, id);
+          return { id };
+        }
         const outcome = await this.challenges.issue(manager, 'registration', {
           userId: id,
           method: this.config.get('REGISTRATION_EMAIL_CONFIRMATION_METHOD'),
@@ -140,6 +146,7 @@ export class RegistrationService {
           `UPDATE users SET status = 'active', updated_at = now() WHERE id = $1`,
           [userId],
         );
+        await this.rbac.assignDefaultRole(manager, userId);
         return {
           ok: true,
           value: { id: user.id, email: user.email, status: 'active' },

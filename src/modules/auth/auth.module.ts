@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { ChallengesModule } from '@/modules/challenges/challenges.module';
+import { RbacModule } from '@/modules/rbac/rbac.module';
 
 import { AccessAuthenticator } from './access-authenticator';
 import { AuthCookies } from './auth-cookies';
@@ -13,7 +14,7 @@ import { SessionService } from './session.service';
 import { TokenService } from './tokens/token.service';
 
 @Module({
-  imports: [ChallengesModule],
+  imports: [ChallengesModule, RbacModule],
   controllers: [RegistrationController, LoginController],
   providers: [
     PasswordHasher,

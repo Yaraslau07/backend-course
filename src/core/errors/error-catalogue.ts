@@ -57,6 +57,19 @@ export const ERROR_CATALOGUE = {
     status: 409,
     message: 'This confirmation is no longer valid.',
   },
+  name_taken: { status: 409, message: 'This name is already in use.' },
+  resource_in_use: {
+    status: 409,
+    message: 'This item is still in use and cannot be changed this way.',
+  },
+  grant_exists: {
+    status: 409,
+    message: 'This role already has a grant for this permission.',
+  },
+  last_rbac_manager: {
+    status: 409,
+    message: 'This change would leave no active user able to manage access.',
+  },
   payload_too_large: { status: 413, message: 'The request body is too large.' },
   unsupported_media_type: {
     status: 415,
