@@ -1,5 +1,4 @@
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
-import request from 'supertest';
 
 import { AppConfig } from '@/core/config/config.types';
 
@@ -18,29 +17,27 @@ describe('Health and bootstrap (e2e)', () => {
   });
 
   it('GET /health/live is public and returns ok with security headers and a request id', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/health/live')
-      .expect(200);
-
-    expect(res.body).toEqual({ status: 'ok' });
+    const res = await app.inject({ method: 'GET', url: '/health/live' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ status: 'ok' });
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.headers['x-frame-options']).toBeDefined();
     expect(res.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it('GET /health/ready from loopback reports every built-in check up', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/health/ready')
-      .expect(200);
-
-    expect(res.body).toEqual({
+    const res = await app.inject({
+      method: 'GET',
+      url: '/health/ready',
+      remoteAddress: '127.0.0.1',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
       status: 'ok',
-      // route_declarations: every route in the real app is declared (spec 1.3 §1.3.2).
       checks: {
         database: 'up',
         config: 'up',
         route_declarations: 'up',
-        // rbac: the policy snapshot is loaded (spec 1.1 §1.3.6).
         rbac: 'up',
         smtp: 'up',
       },
@@ -49,35 +46,39 @@ describe('Health and bootstrap (e2e)', () => {
 
   it('CORS preflight succeeds for an allowed origin with credentials and the CSRF header', async () => {
     const origin = config.CORS_ORIGINS[0];
-    const res = await request(app.getHttpServer())
-      .options('/health/live')
-      .set('Origin', origin)
-      .set('Access-Control-Request-Method', 'POST')
-      .set('Access-Control-Request-Headers', 'content-type,x-csrf-protection')
-      .expect(204);
-
+    const res = await app.inject({
+      method: 'OPTIONS',
+      url: '/health/live',
+      headers: {
+        origin,
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'content-type,x-csrf-protection',
+      },
+    });
+    expect(res.statusCode).toBe(204);
     expect(res.headers['access-control-allow-origin']).toBe(origin);
     expect(res.headers['access-control-allow-credentials']).toBe('true');
     expect(
-      res.headers['access-control-allow-headers']?.toLowerCase(),
+      res.headers['access-control-allow-headers']?.toString().toLowerCase(),
     ).toContain('x-csrf-protection');
   });
 
   it('CORS gives no allow-origin header to an unknown origin', async () => {
-    const res = await request(app.getHttpServer())
-      .options('/health/live')
-      .set('Origin', 'https://evil.example.com')
-      .set('Access-Control-Request-Method', 'POST');
-
+    const res = await app.inject({
+      method: 'OPTIONS',
+      url: '/health/live',
+      headers: {
+        origin: 'https://evil.example.com',
+        'access-control-request-method': 'POST',
+      },
+    });
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
   });
 
   it('OpenAPI lists liveness and hides readiness', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/docs-json')
-      .expect(200);
-
-    const paths = Object.keys((res.body as { paths: object }).paths);
+    const res = await app.inject({ method: 'GET', url: '/docs-json' });
+    expect(res.statusCode).toBe(200);
+    const paths = Object.keys(res.json<{ paths: object }>().paths);
     expect(paths).toContain('/health/live');
     expect(paths).not.toContain('/health/ready');
   });

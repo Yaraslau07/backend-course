@@ -119,6 +119,17 @@ describe('storage cleanup and reconciliation', () => {
     expect(s.storage.delete).toHaveBeenCalledTimes(1);
   });
 
+  it('reconciles generated 128-bit hex keys as well as earlier UUID-shaped objects', async () => {
+    const s = setup();
+    const hex = '0123456789abcdef0123456789abcdef.webp';
+    s.storage.list.mockResolvedValue({
+      kind: 'listed',
+      objects: [{ key: hex, modifiedAt: new Date(0) }],
+    });
+    expect(await s.worker.sweep()).toBe(1);
+    expect(s.storage.delete).toHaveBeenCalledWith(hex);
+  });
+
   it('does not race uploads and tolerates unavailable listings', async () => {
     const s = setup({ locked: false });
     expect(await s.worker.sweep()).toBe(0);

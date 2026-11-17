@@ -143,7 +143,11 @@ export class StorageCleanup implements OnModuleInit, OnModuleDestroy {
             break;
           }
           const candidates = listing.objects.filter(
-            (o) => o.modifiedAt < cutoff && /^[0-9a-f-]{36}\.webp$/.test(o.key),
+            (o) =>
+              o.modifiedAt < cutoff &&
+              /^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.webp$/.test(
+                o.key,
+              ),
           );
           const references = await manager.query<{ photo_key: string }[]>(
             `SELECT photo_key FROM users WHERE photo_key = ANY($1::text[])`,

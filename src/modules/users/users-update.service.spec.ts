@@ -349,7 +349,7 @@ describe('photo atomicity', () => {
     s.state.row!.photo_key = 'old-key';
     await s.service.upload(actor, actor, file);
     expect(s.storage.write).toHaveBeenCalledWith(
-      expect.stringMatching(/^[0-9a-f-]{36}\.webp$/),
+      expect.stringMatching(/^[0-9a-f]{32}\.webp$/),
       Buffer.from('normalized'),
     );
     expect(s.sql).toHaveBeenCalledWith(

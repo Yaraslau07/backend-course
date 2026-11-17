@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, type EntityManager } from 'typeorm';
@@ -287,7 +287,7 @@ export class UsersUpdateService {
     if (!before) throw new AppException('not_found');
     this.editable(before);
     const bytes = await this.photos.normalize(await load());
-    const key = `${randomUUID()}.webp`;
+    const key = `${randomBytes(16).toString('hex')}.webp`;
     let stored = false;
     return this.audit(actor, target, 'photo_upload', [], async () => {
       try {

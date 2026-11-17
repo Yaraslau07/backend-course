@@ -1,5 +1,4 @@
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
-import request from 'supertest';
 
 import { AppConfig } from '@/core/config/config.types';
 
@@ -35,12 +34,14 @@ describe('CSRF (e2e)', () => {
 
   async function write(headers: Record<string, string>) {
     const before = calls['public-write'] ?? 0;
-    const res = await request(app.getHttpServer())
-      .post('/__routes/public')
-      .set(headers);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/__routes/public',
+      headers,
+    });
     return {
-      status: res.status,
-      code: (res.body as { code?: unknown }).code,
+      status: res.statusCode,
+      code: res.json<{ code?: unknown }>().code,
       ran: (calls['public-write'] ?? 0) > before,
       allowOrigin: res.headers['access-control-allow-origin'],
     };
@@ -104,10 +105,12 @@ describe('CSRF (e2e)', () => {
   });
 
   it('never checks a read', async () => {
-    await request(app.getHttpServer())
-      .get('/__routes/public')
-      .set('Origin', 'https://evil.example.com')
-      .expect(200);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/__routes/public',
+      headers: { origin: 'https://evil.example.com' },
+    });
+    expect(res.statusCode).toBe(200);
   });
 
   it('logs each rejection with its reason and without the origin', () => {

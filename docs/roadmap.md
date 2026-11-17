@@ -16,8 +16,8 @@ The order the assignment is being built in, and why. Update the status column as
 | C9. Authentication | 1c | 1.2 | ✅ done |
 | C10. RBAC | 1c | 1.1 | ✅ done |
 | C11. Authorization chain | 1c | 1.3 | ✅ done |
-| C12. View and list | 2 | 1.4, 1.7 | ⏳ implemented; awaiting PR review/merge |
-| C13. Update | 2 | 1.5 | ⏳ implemented; awaiting PR review/merge |
+| C12. View and list | 2 | 1.4, 1.7 | ✅ done (PR #13) |
+| C13. Update | 2 | 1.5 | ⏳ PR #14; awaiting review/merge |
 | C14. Delete | 2 | 1.6 | pending |
 | C15. Transformation framework | 3 | 2.0 | pending |
 | C16. Text | 3 | 2.1 | pending |
@@ -164,13 +164,14 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
 The three features are independent of each other, but are built in order (C12 → C13 → C14), each merged before the next starts.
 
 - **2a. View and list** (specs 1.4 and 1.7; C12 implemented, D51): the safe profile projector, `GET /users/{id}`, the protected photo stream, `GET /admin/users` with the HMAC keyset cursor and key ring. Search/order indexes and the read/delete storage port are in place. Local reads work in development/test; production S3 and uploads arrive in C13.
-- **2b. Update** (spec 1.5; C13 implemented, D52–D54):
+- **2b. Update** (spec 1.5; C13 implemented, D52–D56):
   - PATCH with a field whitelist (self and admin)
   - email change through the challenge engine
   - photo upload with sharp (WebP), clear photo
   - the storage adapter (local and S3/MinIO), the `storage_cleanup_jobs` worker and the orphan sweep
 
-C13 was prepared on the completed C12 branch at the author's request to continue; GitHub still reported C12 PR #13 open during pickup. Its PR is stacked on C12 until that merge is reflected on `main`.
+C12 is merged. C13 PR #14 targets `main`; C14 starts after #14 is merged.
+
 - **2c. Delete** (spec 1.6):
   - self deletion through the challenge engine; admin DELETE
   - `Idempotency-Key`

@@ -99,6 +99,31 @@ async function begin(actor: Actor, address = email()) {
 }
 
 describe('profile PATCH (spec 1.5)', () => {
+  it('audits rejected input using verified identity and field names without logging values', async () => {
+    const name = `private-${randomUUID()}`.repeat(3);
+    const address = email();
+    sensitive.push(name, address);
+    const res = await patch(admin, admin.id, {
+      displayName: name,
+      email: address,
+    });
+    expect(res.statusCode).toBe(400);
+    const entry = logs
+      .lines()
+      .find(
+        (line) =>
+          line.event === 'user_update_request' &&
+          line.requestId === res.headers['x-request-id'],
+      );
+    expect(entry).toMatchObject({
+      actorUserId: admin.id,
+      operation: 'patch',
+      fields: ['displayName', 'email'],
+      result: 'failure',
+      category: 'bad_request',
+    });
+    expect(entry).not.toHaveProperty('targetUserId');
+  });
   it('protects the last active manager using the real shared invariant without changing global fixtures', async () => {
     const runner = db.createQueryRunner();
     await runner.connect();

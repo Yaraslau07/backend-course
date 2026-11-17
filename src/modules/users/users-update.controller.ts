@@ -8,6 +8,7 @@ import {
   Post,
   Put,
   Req,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -26,6 +27,7 @@ import { RateLimit } from '@/core/rate-limit/rate-limit.decorator';
 import { UsersUpdateService } from './users-update.service';
 import { PHOTO_MAX_BYTES, type PhotoInput } from './photo-normalizer';
 import { SafeProfileDto } from './dto/safe-profile.dto';
+import { UsersUpdateAuditInterceptor } from './users-update-audit.interceptor';
 
 export async function readPhotoMultipart(
   request: FastifyRequest,
@@ -75,6 +77,7 @@ export async function readPhotoMultipart(
 @ApiResponse({ status: 429, description: 'Change/email/cooldown limit' })
 @ApiResponse({ status: 503, description: 'Dependency unavailable' })
 @Controller('users/:userId')
+@UseInterceptors(UsersUpdateAuditInterceptor)
 export class UsersUpdateController {
   constructor(private readonly users: UsersUpdateService) {}
   @Patch()
