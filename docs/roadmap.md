@@ -12,8 +12,8 @@ The order the assignment is being built in, and why. Update the status column as
 | C5. Throttling | 1b | 1.0–1.7, 2.3 | ✅ done |
 | C6. MailService | 1b | 1.0, 1.2, 1.5, 1.6 | ✅ done |
 | C7. Email challenge engine | 1c | 1.0, 1.2, 1.5, 1.6 | ✅ done |
-| C8. Registration | 1c | 1.0 | ⏭ next |
-| C9. Authentication | 1c | 1.2 | pending |
+| C8. Registration | 1c | 1.0 | ✅ done |
+| C9. Authentication | 1c | 1.2 | ⏭ next |
 | C10. RBAC | 1c | 1.1 | pending |
 | C11. Authorization chain | 1c | 1.3 | pending |
 | C12. View and list | 2 | 1.4, 1.7 | pending |
@@ -41,6 +41,49 @@ Each checkpoint is one branch and one PR. The next one starts only after the pre
 `/code-review` and `/security-review` run at the end of each phase (after C1, C6, C11, C14, C19), and individually on C7, C9, C10, C11 and C14.
 
 Schema checkpoints add: `migration:run` → `migration:revert` → `migration:run` on an empty database, and `npm run migration:check` reporting no drift.
+
+## Working agreement (read this first in a new session)
+
+How the author and the agent work, as agreed on 2026-11-16. A new session continues from here; nothing else is needed.
+
+**Picking up:**
+1. Run `gh pr list --state open`. If a checkpoint PR is still open, it is waiting for the author's review: don't start the next checkpoint until they say it is merged.
+2. Otherwise `git checkout main && git pull`, find the first `⏭ next` row in the table above, and read its spec in `docs/specs/`, `docs/invariants.md`, `docs/known-gaps.md` and the related decisions.
+
+**Each checkpoint:**
+1. **Branch** `feat/<short-name>` from a fresh `main`.
+2. **Tests first,** in a `test:` commit that fails:
+   - unit tests in `src/**/*.spec.ts`;
+   - e2e tests in `test/*.e2e-spec.ts`, using `createTestApp()`, `LogCapture`, `waitForMail()` and `resetRateLimits()`;
+   - signature-only stubs (`throw new Error('not implemented')`) so it compiles and passes lint.
+3. **Implement** in a `feat:` commit, until everything passes.
+4. **Run the gate above.** Run the e2e suite 3 to 5 times when concurrency or timing is involved. Unit coverage must stay at least 80% on every metric (branches is the one that slips); add unit tests with scripted fakes when logic is only covered by e2e.
+5. **Smoke test:** run `npm run build && node dist/main.js` with the author's `.env`; override flags with environment variables (e.g. `REGISTRATION_EMAIL_CONFIRMATION_ENABLED=true`) and read mail from Mailpit's API. Add the requests to an `http/*.http` file.
+6. **Docs:** add a numbered decision for every non-obvious choice. Never rewrite an old decision; add an amending entry instead.
+7. **Reviews:** when the checkpoint is in the review list above, run `/code-review medium main...HEAD` and `/security-review`, fix the findings in a `fix:` commit, and record them in a decision. Phase-end reviews cover the whole phase range (e.g. `<merge commit before the phase>...HEAD`).
+8. **Push, open the PR, wait for CI to pass, then stop.** The PR description has: what changed, the spec audit table (rule → where → test), the gate checklist, review findings, and anything changed after the test commit. Then report to the author in plain words and wait for "merged, continue".
+
+**Conventions:**
+- Conventional commits with a lowercase subject (commitlint rejects sentence case).
+- Commits end with the `Co-Authored-By` trailer; PR descriptions end with the Claude Code line.
+- Don't decide silently: when a spec is ambiguous in a way that changes behaviour, ask the author before implementing.
+- Pin new dependencies to a release at least two weeks old, and prefer packages without install scripts (the Dockerfile uses `npm ci --ignore-scripts`).
+
+**Things that need the author:**
+- **C13 (S3 storage):** walk the author through creating the bucket and an access key. They hand back the endpoint and keys, which go only into their local `.env` and GitHub secrets, never into a committed file.
+- **Any new secret:** the author adds it to their `.env` (`npm run keys:generate` prints one). Tell them before merging, because the app refuses to boot without it.
+
+**Local environment, as of 2026-11-16:**
+- docker-compose runs Postgres (`app` and `app_test`) and Mailpit.
+- The `app` database has all migrations applied.
+- `.env` has every key, including `RATE_LIMIT_KEY_HMAC_KEY`, with `REGISTRATION_EMAIL_CONFIRMATION_ENABLED=false`.
+
+**Tooling traps that cost time before:**
+- `prettier --write src` also reformats the `README.MD` files under `src/`. Use `"src/**/*.ts"`.
+- Nest's ConfigModule reads the environment once per process, so use `createTestApp({ env })` instead of changing `process.env`.
+- A Fastify 413 over a real socket can surface as `ECONNRESET`; use `app.inject()`.
+- TypeORM can't read an array column's precision back, so declare arrays without `precision` to avoid permanent drift.
+- Postgres `now()` is the transaction's start time; use `clock_timestamp()` when a lock wait matters.
 
 ## Phase 0: Foundation ✅
 
@@ -102,7 +145,7 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
    - claim-then-act consumption
 
    It's reused by registration, login, email change and deletion, which makes it the biggest single time saver. A pattern to borrow is the email verification service in touch-grass-back, reworked for HMAC, attempt ids, `consumed_reason` and the 5th-attempt rule.
-2. **Registration** (spec 1.0): argon2 hashing, the password policy (over-long input is rejected), 201 or 202, the 409 on a duplicate email.
+2. ✅ **Registration** (spec 1.0; C8, D40–D41): argon2 hashing, the password policy (over-long input is rejected), 201 or 202, the 409 on a duplicate email.
 3. **Authentication** (spec 1.2):
    - login with exactly one argon2 verify per attempt (a dummy hash for unknown users) and the optional email step
    - stateless HS256 access and refresh JWTs with separate secrets, `token_use`, 30 s tolerance and cookies

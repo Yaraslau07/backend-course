@@ -12,6 +12,7 @@ import { LoggingModule } from '@/core/logging/logging.module';
 /**
  * Application modules
  */
+import { AuthModule } from '@/modules/auth/auth.module';
 import { ChallengesModule } from '@/modules/challenges/challenges.module';
 import { UsersModule } from '@/modules/users/users.module';
 
@@ -30,6 +31,7 @@ import { UsersModule } from '@/modules/users/users.module';
      */
     ChallengesModule,
     UsersModule,
+    AuthModule,
   ],
 })
 export class AppModule {}

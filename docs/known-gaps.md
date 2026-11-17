@@ -19,7 +19,7 @@ A running list of what's still outstanding. Check it before assuming something i
 - No CD. The course only requires a service called through an HTTP client.
 - Readiness is gated by source IP, not a separate internal port (see D6).
 - The Docker smoke test in CI starts the container with a throwaway Postgres and `POSTGRES_MIGRATIONS_RUN=true`, then checks the schema exists.
-- `npm install` prints `install-scripts` warnings for packages whose postinstall was blocked by npm's allowlist (`unrs-resolver`). Harmless today. When native deps arrive (argon2, sharp), approve their scripts with `npm install-scripts approve <pkg>`, and check that the Dockerfile's `npm ci --ignore-scripts` still gets prebuilt binaries.
+- `npm install` prints `install-scripts` warnings for packages whose postinstall was blocked by npm's allowlist (`unrs-resolver`). Harmless. Argon2 avoided the question by using `@node-rs/argon2`, which needs no install script (D40). When sharp arrives (C13), check that `npm ci --ignore-scripts` still gets its prebuilt binary.
 
 ## Route declarations
 - The startup scan reports only the first path of a controller or handler that declares several aliases (`@Controller(['a', 'b'])`). The declaration applies to every alias anyway, since it sits on the handler.
@@ -27,8 +27,11 @@ A running list of what's still outstanding. Check it before assuming something i
 ## Rate limits
 - `TRUST_PROXY` must be `true` behind a reverse proxy, or every client shares the proxy's IP budget. It must stay `false` when the app is reachable directly, or a client can pick its own IP with `X-Forwarded-For`.
 
+## Registration
+- Activation assigns no `user` role until RBAC exists (C10); the bootstrap then gives it to every active user without roles (spec 1.0 and 1.1).
+
 ## Email challenges
-- The engine exists, but no flow uses it yet: registration (C8), login (C9), email change (C13) and deletion (C14) wire it in.
+- Registration uses the engine (C8); login (C9), email change (C13) and deletion (C14) wire it in next.
 - `resend_cooldown` is a 429 like the spec says; the 5-emails-per-user-per-hour limits for email change and deletion (`email_change_emails`, `deletion_challenge_emails`) are applied by those flows, not the engine.
 
 ## Mail

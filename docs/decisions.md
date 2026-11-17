@@ -156,3 +156,20 @@ From the `/code-review` of C2–C6:
 - **Exhaustion is logged as its own event** (`exhausted`); the client still gets the 400 the spec gives the 5th wrong code.
 - **`newEmail` is checked:** required for an email change and refused elsewhere. Getting it wrong is a programming error, so it throws plainly.
 - **Not changed:** without the user lock, two concurrent `issue()` calls for a user with no outstanding challenge both insert, and the partial unique index refuses the second. That error reaches the filter as `409 conflict` (D20), not a 500. Flows always take the user lock first, so they never see it.
+
+## D40: Passwords: argon2id via `@node-rs/argon2`, an explicit maximum (2026-11-16)
+- **Library:** `@node-rs/argon2` 2.2.2, pinned. It ships a prebuilt binary per platform as an optional dependency, including `linux-x64-musl` for the Alpine image, and has no install script, so `npm ci --ignore-scripts` in the Dockerfile still works. The `argon2` package needs a `node-gyp` install script.
+- **Parameters:** argon2id, 19 MiB, 2 passes, 1 lane (the OWASP minimum), about 25 ms per hash here. The salt and parameters are in the stored string, so they can be raised later without a migration: old hashes still verify.
+- **Policy (spec 1.0):** 8 to 128 characters, counted as code points so an emoji is one character, never trimmed or normalized. At least one letter of any alphabet (`\p{L}`) and one digit (`\p{Nd}`). Argon2 itself has no 72-byte cut like bcrypt, but unbounded input is unbounded work, so anything over 128 characters is rejected, never cut.
+- **Hashing happens before the transaction,** so no row lock is held while it computes.
+
+## D41: Registration flow choices (2026-11-16)
+- **Explicit `409 email_taken`,** the spec's default, rather than its optional neutral answer. The unique index decides, so two concurrent registrations give one 201 and one 409.
+- **Confirm is claim-then-act:** the challenge is claimed before the user becomes `active`, so a challenge used twice at once activates once. Only a `pending` user is eligible; anything else is a dead challenge (`400 invalid_challenge`).
+- **Resend is by email (spec 1.0)**:
+  - The outstanding challenge is resent under the same `attemptId`.
+  - If the last challenge is used up (exhausted, replaced), a new one is issued instead, because registration has no other way to get a new mail. Its 60 s cooldown still counts from the last mail (the engine's `cooldownFromLatest`), so exhausting the attempts doesn't skip the wait.
+  - The method is the one recorded with the registration, even if the setting has changed since.
+  - An unknown email and a non-pending user both answer `400 invalid_challenge`.
+- **Rate limits:** `registration_ip` on register and `registration_resend_ip` on resend (D30). Confirm has none: an OTP allows 5 tries per mail, and a magic token is 32 random bytes.
+- **No role yet.** Spec 1.0: while RBAC isn't there, activation assigns no role; the RBAC bootstrap (C10) gives existing active users `user`, and from then on activation assigns it in the same transaction.

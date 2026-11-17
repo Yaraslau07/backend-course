@@ -154,9 +154,28 @@ export class ChallengeEngine {
   async issue(
     manager: EntityManager,
     scenario: ChallengeScenario,
-    input: { userId: string; method: ChallengeMethod; newEmail?: string },
+    input: {
+      userId: string;
+      method: ChallengeMethod;
+      newEmail?: string;
+      /**
+       * Count the cooldown from the user's last challenge even if it is already consumed (for a
+       * registration whose challenge was exhausted: a new one must still wait for the cooldown).
+       */
+      cooldownFromLatest?: boolean;
+    },
   ): Promise<Outcome<IssuedChallenge>> {
     const { table } = CHALLENGE_SCENARIOS[scenario];
+    if (input.cooldownFromLatest) {
+      const latest = await this.latest(manager, scenario, input.userId);
+      if (latest && latest.age < CHALLENGE_RESEND_SECONDS) {
+        this.event(scenario, 'issue_rejected', {
+          method: input.method,
+          reason: 'cooldown',
+        });
+        return this.cooldown(latest.age);
+      }
+    }
     const previous = await this.selectForUpdate(
       manager,
       scenario,
@@ -400,6 +419,34 @@ export class ChallengeEngine {
     reason: ChallengeConsumedReason,
   ): Promise<number> {
     return this.consume(manager, scenario, `user_id = $1`, userId, reason);
+  }
+
+  /** The user's most recent challenge, consumed or not (no lock; the flow holds the user lock). */
+  async latest(
+    manager: EntityManager,
+    scenario: ChallengeScenario,
+    userId: string,
+  ): Promise<{
+    id: string;
+    method: ChallengeMethod;
+    outstanding: boolean;
+    age: number;
+  } | null> {
+    const { table } = CHALLENGE_SCENARIOS[scenario];
+    const rows = await manager.query<
+      {
+        id: string;
+        method: ChallengeMethod;
+        outstanding: boolean;
+        age: number;
+      }[]
+    >(
+      `SELECT id, method, consumed_at IS NULL AS outstanding,
+              extract(epoch FROM clock_timestamp() - last_sent_at)::float8 AS age
+         FROM ${table} WHERE user_id = $1 ORDER BY last_sent_at DESC LIMIT 1`,
+      [userId],
+    );
+    return rows[0] ?? null;
   }
 
   /** The 202 body for an issued or resent challenge. Never contains the secret. */
