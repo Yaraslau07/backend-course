@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -8,8 +8,18 @@ import sharp from 'sharp';
 import { DataSource } from 'typeorm';
 
 import type { AppConfig } from '@/core/config/config.types';
+import { RateLimiter } from '@/core/rate-limit/rate-limiter.service';
 import type { SafeProfile } from '@/modules/users/safe-profile';
 import { USER_STATUSES } from '@/modules/users/users.types';
+import {
+  ObjectStorage,
+  STORAGE_ADOPTION_LOCK,
+} from '@/modules/storage/object-storage';
+import { StorageCleanup } from '@/modules/storage/storage-cleanup.service';
+import {
+  assertRbacManagerRemains,
+  lockRbacPolicy,
+} from '@/modules/rbac/rbac-invariant';
 
 import { codeFrom, createUser, ip, setStatus, tokenFrom } from './utils/auth';
 import { createTestApp } from './utils/create-test-app';
@@ -89,6 +99,28 @@ async function begin(actor: Actor, address = email()) {
 }
 
 describe('profile PATCH (spec 1.5)', () => {
+  it('protects the last active manager using the real shared invariant without changing global fixtures', async () => {
+    const runner = db.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    try {
+      await lockRbacPolicy(runner.manager);
+      await runner.query(
+        `UPDATE users SET status = 'blocked' WHERE status = 'active' AND id <> $1`,
+        [admin.id],
+      );
+      await assertRbacManagerRemains(runner.manager);
+      await runner.query(`UPDATE users SET status = 'blocked' WHERE id = $1`, [
+        admin.id,
+      ]);
+      await expect(
+        assertRbacManagerRemains(runner.manager),
+      ).rejects.toMatchObject({ code: 'last_rbac_manager' });
+    } finally {
+      await runner.rollbackTransaction();
+      await runner.release();
+    }
+  });
   it('checks session/base rights, then foreign/admin-field rights before lookup', async () => {
     const actor = await actorWithRoles(app, ['user']);
     const noRights = await actorWithRoles(app, []);
@@ -209,6 +241,119 @@ describe('profile PATCH (spec 1.5)', () => {
 });
 
 describe('email change (spec 1.5)', () => {
+  it('timestamps a transactional email quota after earlier user-lock work, not at transaction start', async () => {
+    await db.transaction(async (manager) => {
+      await manager.query('SELECT pg_sleep(0.025)');
+      await app
+        .get<RateLimiter>(RateLimiter)
+        .consume('email_change_emails', [randomUUID()], manager);
+      const [{ valid }] = await manager.query<{ valid: boolean }[]>(
+        `SELECT bool_and(hits[cardinality(hits)] > transaction_timestamp()) AS valid FROM rate_limits WHERE xmin::text = pg_current_xact_id()::text AND bucket = 'email_change_emails'`,
+      );
+      expect(valid).toBe(true);
+    });
+  });
+  it('allows at most five issued emails per hour and rolls back a quota-refused replacement', async () => {
+    const actor = await actorWithRoles(app, ['user']);
+    let last = '';
+    for (let n = 0; n < 5; n++) {
+      const attempt = await begin(actor);
+      last = attempt.challengeId;
+      await db.query(
+        `UPDATE email_change_challenges SET last_sent_at = now() - interval '61 seconds' WHERE id = $1`,
+        [last],
+      );
+    }
+    expect((await start(actor, email())).statusCode).toBe(429);
+    const rows = await db.query<{ id: string }[]>(
+      `SELECT id FROM email_change_challenges WHERE user_id = $1 AND consumed_at IS NULL`,
+      [actor.id],
+    );
+    expect(rows).toEqual([{ id: last }]);
+  });
+
+  it('allows only one concurrent confirmation and keeps the other request unambiguous', async () => {
+    const actor = await actorWithRoles(app, ['user']);
+    const attempt = await begin(actor);
+    const results = await Promise.all([
+      confirm(actor, attempt.challengeId, attempt.code),
+      confirm(actor, attempt.challengeId, attempt.code),
+    ]);
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 400]);
+  });
+
+  it('supports a magic link while requiring the same active session', async () => {
+    const other = await createTestApp({
+      logs,
+      env: { EMAIL_CHANGE_METHOD: 'magic_link', STORAGE_LOCAL_ROOT: root },
+    });
+    try {
+      const actor = await actorWithRoles(other.app, ['user']);
+      const address = email();
+      const started = await other.app.inject({
+        method: 'POST',
+        url: `/users/${actor.id}/email-change`,
+        cookies: actor.cookies,
+        payload: { newEmail: address },
+      });
+      expect(started.statusCode).toBe(202);
+      const token = tokenFrom((await waitForMail(address)).text);
+      sensitive.push(token, address);
+      const url = `/users/${actor.id}/email-change/confirm`;
+      expect(
+        (await other.app.inject({ method: 'POST', url, payload: { token } }))
+          .statusCode,
+      ).toBe(401);
+      const res = await other.app.inject({
+        method: 'POST',
+        url,
+        cookies: actor.cookies,
+        payload: { token },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json<SafeProfile>().email).toBe(address);
+    } finally {
+      await other.app.close();
+    }
+  });
+
+  it('keeps a committed challenge on SMTP failure with safe recovery fields', async () => {
+    const other = await createTestApp({
+      logs,
+      env: { SMTP_PORT: '1', STORAGE_LOCAL_ROOT: root },
+    });
+    try {
+      const actor = await actorWithRoles(other.app, ['user']);
+      const address = email();
+      sensitive.push(address);
+      const res = await other.app.inject({
+        method: 'POST',
+        url: `/users/${actor.id}/email-change`,
+        cookies: actor.cookies,
+        payload: { newEmail: address },
+      });
+      expect(res.statusCode).toBe(503);
+      const body = res.json<{
+        challengeId: string;
+        confirmationRequired: boolean;
+        method: string;
+        retryAfterSeconds: number;
+      }>();
+      expect(body).toMatchObject({
+        confirmationRequired: true,
+        method: 'otp',
+        retryAfterSeconds: 60,
+      });
+      const [challenge] = await db.query<{ consumed_at: Date | null }[]>(
+        `SELECT consumed_at FROM email_change_challenges WHERE id = $1`,
+        [body.challengeId],
+      );
+      expect(challenge.consumed_at).toBeNull();
+      expect(res.body).not.toContain(address);
+    } finally {
+      await other.app.close();
+    }
+  });
   it('is self-only even for admin and refuses current/occupied emails', async () => {
     const actor = await actorWithRoles(app, ['user']);
     expect(
@@ -367,6 +512,7 @@ describe('photos and cleanup (spec 1.5)', () => {
   it('normalizes, serves, replaces and clears a photo; no-op clear retains updatedAt', async () => {
     const actor = await actorWithRoles(app, ['user']);
     const bytes = await image();
+    const keys: string[] = [];
     for (let n = 0; n < 2; n++) {
       const res = await upload(actor, actor.id, [
         { name: 'file', mime: 'image/png', bytes },
@@ -377,6 +523,12 @@ describe('photos and cleanup (spec 1.5)', () => {
       );
       const photo = await call('GET', `/users/${actor.id}/photo`, actor);
       expect(photo.statusCode).toBe(200);
+      const [stored] = await db.query<{ photo_key: string }[]>(
+        `SELECT photo_key FROM users WHERE id = $1`,
+        [actor.id],
+      );
+      keys.push(stored.photo_key);
+      sensitive.push(stored.photo_key);
       expect((await sharp(photo.rawPayload).metadata()).format).toBe('webp');
     }
     expect(
@@ -391,11 +543,176 @@ describe('photos and cleanup (spec 1.5)', () => {
       before.json<SafeProfile>().updatedAt,
     );
     expect(after.json<SafeProfile>().photoUrl).toBeNull();
-    const [{ count }] = await db.query<{ count: number }[]>(
-      `SELECT count(*)::int AS count FROM storage_cleanup_jobs WHERE storage_key IN (SELECT storage_key FROM storage_cleanup_jobs WHERE reason IN ('photo_replaced', 'photo_cleared'))`,
+    const jobs = await db.query<{ reason: string }[]>(
+      `SELECT reason FROM storage_cleanup_jobs WHERE storage_key = ANY($1::text[]) ORDER BY created_at, id`,
+      [keys],
     );
-    expect(count).toBeGreaterThanOrEqual(2);
+    expect(jobs.map((j) => j.reason).sort()).toEqual([
+      'photo_cleared',
+      'photo_replaced',
+    ]);
     sensitive.push('private-original.jpg');
+  });
+
+  it('preserves the old profile on storage failure and deletes a new object after a status race', async () => {
+    const actor = await actorWithRoles(app, ['user']);
+    const bytes = await image();
+    const storage = app.get<ObjectStorage>(ObjectStorage);
+    const failing = jest
+      .spyOn(storage, 'write')
+      .mockResolvedValue('unavailable');
+    expect(
+      (
+        await upload(actor, actor.id, [
+          { name: 'file', mime: 'image/png', bytes },
+        ])
+      ).statusCode,
+    ).toBe(503);
+    expect(
+      (await call('GET', `/users/${actor.id}`, actor)).json<SafeProfile>()
+        .photoUrl,
+    ).toBeNull();
+    failing.mockRestore();
+    const original = storage.write.bind(storage) as ObjectStorage['write'];
+    let key = '';
+    jest.spyOn(storage, 'write').mockImplementation(async (newKey, data) => {
+      key = newKey;
+      const result = await original(newKey, data);
+      await db.query(`UPDATE users SET status = 'deleting' WHERE id = $1`, [
+        actor.id,
+      ]);
+      return result;
+    });
+    expect(
+      (
+        await upload(actor, actor.id, [
+          { name: 'file', mime: 'image/png', bytes },
+        ])
+      ).statusCode,
+    ).toBe(409);
+    expect(await storage.read(key)).toEqual({ kind: 'not_found' });
+    sensitive.push(key);
+  });
+
+  it('retries cleanup five times and treats a missing object as successful', async () => {
+    const key = `${randomUUID()}.webp`;
+    sensitive.push(key);
+    const [job] = await db.query<{ id: string }[]>(
+      `INSERT INTO storage_cleanup_jobs (storage_key, reason, next_attempt_at) VALUES ($1, 'photo_cleared', '1970-01-01') RETURNING id`,
+      [key],
+    );
+    const remove = jest
+      .spyOn(app.get<ObjectStorage>(ObjectStorage), 'delete')
+      .mockResolvedValue('unavailable');
+    const worker = app.get<StorageCleanup>(StorageCleanup);
+    for (let n = 1; n <= 5; n++) {
+      await worker.run();
+      const [row] = await db.query<
+        {
+          status: string;
+          attempts: number;
+          updated_at: Date;
+          next_attempt_at: Date | null;
+        }[]
+      >(
+        `SELECT status, attempts, next_attempt_at, updated_at FROM storage_cleanup_jobs WHERE id = $1`,
+        [job.id],
+      );
+      expect(row.attempts).toBe(n);
+      expect(row.status).toBe(n === 5 ? 'failed' : 'queued');
+      if (n < 5) {
+        expect(
+          Math.abs(
+            row.next_attempt_at!.getTime() - row.updated_at.getTime() - 60_000,
+          ),
+        ).toBeLessThanOrEqual(1);
+        await db.query(
+          `UPDATE storage_cleanup_jobs SET next_attempt_at = '1970-01-01' WHERE id = $1`,
+          [job.id],
+        );
+      }
+    }
+    remove.mockRestore();
+    const [missing] = await db.query<{ id: string }[]>(
+      `INSERT INTO storage_cleanup_jobs (storage_key, reason, next_attempt_at) VALUES ($1, 'photo_cleared', '1970-01-01') RETURNING id`,
+      [`${randomUUID()}.webp`],
+    );
+    await worker.run();
+    const [finished] = await db.query<{ status: string }[]>(
+      `SELECT status FROM storage_cleanup_jobs WHERE id = $1`,
+      [missing.id],
+    );
+    expect(finished.status).toBe('succeeded');
+  });
+
+  it('reconciliation cannot race a pending photo adoption', async () => {
+    const runner = db.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    try {
+      await runner.query('SELECT pg_advisory_xact_lock_shared($1)', [
+        STORAGE_ADOPTION_LOCK,
+      ]);
+      expect(await app.get<StorageCleanup>(StorageCleanup).sweep()).toBe(0);
+    } finally {
+      await runner.rollbackTransaction();
+      await runner.release();
+    }
+  });
+
+  it('reconciles only old unreferenced photo objects and preserves current references', async () => {
+    const storage = app.get<ObjectStorage>(ObjectStorage);
+    const worker = app.get<StorageCleanup>(StorageCleanup);
+    const old = `${randomUUID()}.webp`;
+    const live = `${randomUUID()}.webp`;
+    const recent = `${randomUUID()}.webp`;
+    sensitive.push(old, live, recent);
+    for (const key of [old, live, recent])
+      expect(await storage.write(key, Buffer.from('test object'))).toBe(
+        'stored',
+      );
+    const [{ old_time, current_time }] = await db.query<
+      { old_time: Date; current_time: Date }[]
+    >(
+      `SELECT clock_timestamp() - interval '2 hours' AS old_time, clock_timestamp() AS current_time`,
+    );
+    for (const key of [old, live])
+      await utimes(join(root, key), old_time, old_time);
+    await utimes(join(root, recent), current_time, current_time);
+    const owner = await createUser(app);
+    await db.query(`UPDATE users SET photo_key = $2 WHERE id = $1`, [
+      owner.id,
+      live,
+    ]);
+    expect(await worker.sweep()).toBe(1);
+    expect(await storage.read(old)).toEqual({ kind: 'not_found' });
+    for (const key of [live, recent]) {
+      const object = await storage.read(key);
+      expect(object.kind).toBe('found');
+      if (object.kind === 'found') object.stream.destroy();
+    }
+  });
+
+  it('shares a 30/hour budget between PATCH and photo operations and applies CSRF', async () => {
+    const actor = await actorWithRoles(app, ['user']);
+    const cross = await app.inject({
+      method: 'PATCH',
+      url: `/users/${actor.id}`,
+      cookies: actor.cookies,
+      headers: { origin: 'https://evil.example' },
+      payload: { displayName: 'Name' },
+    });
+    expect(cross.statusCode).toBe(403);
+    for (let n = 0; n < 30; n++)
+      expect(
+        (n % 2
+          ? await call('DELETE', `/users/${actor.id}/photo`, actor)
+          : await patch(actor, actor.id, { displayName: null })
+        ).statusCode,
+      ).toBe(n % 2 ? 204 : 200);
+    expect(
+      (await patch(actor, actor.id, { displayName: null })).statusCode,
+    ).toBe(429);
   });
 
   it('checks foreign rights before target lookup and refuses noneditable statuses', async () => {

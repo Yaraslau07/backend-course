@@ -73,7 +73,43 @@ describe('development opaque object storage', () => {
     env = 'production';
     expect(await storage.read('photo')).toEqual({ kind: 'unavailable' });
     expect(await storage.delete('photo')).toBe('unavailable');
+    expect(await storage.write('new', Buffer.from('private'))).toBe(
+      'unavailable',
+    );
+    expect(await storage.list()).toEqual({ kind: 'unavailable' });
     expect(await readFile(join(root, 'photo'), 'utf8')).toBe('private');
+  });
+
+  it('writes without overwriting and lists regular files with pagination', async () => {
+    expect(await storage.write('opaque.webp', Buffer.from('first'))).toBe(
+      'stored',
+    );
+    expect(await storage.write('opaque.webp', Buffer.from('second'))).toBe(
+      'unavailable',
+    );
+    expect(await storage.write('../escape', Buffer.alloc(1))).toBe(
+      'unavailable',
+    );
+    expect(await readFile(join(root, 'opaque.webp'), 'utf8')).toBe('first');
+    await Promise.all(
+      Array.from({ length: 101 }, (_, n) =>
+        writeFile(
+          join(root, `photo-${String(n).padStart(3, '0')}.webp`),
+          'photo',
+        ),
+      ),
+    );
+    const first = await storage.list();
+    expect(first.kind).toBe('listed');
+    if (first.kind !== 'listed') throw new Error('expected listing');
+    expect(first.objects).toHaveLength(100);
+    expect(first.cursor).toBeDefined();
+    const last = await storage.list(first.cursor);
+    expect(last.kind).toBe('listed');
+    if (last.kind !== 'listed') throw new Error('expected listing');
+    expect(last.objects).toHaveLength(2);
+    expect(last.cursor).toBeUndefined();
+    expect(Number.isFinite(first.objects[0].modifiedAt.getTime())).toBe(true);
   });
 
   it('returns unavailable when the storage root is not a directory', async () => {

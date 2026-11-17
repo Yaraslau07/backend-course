@@ -1,4 +1,6 @@
 import sharp from 'sharp';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { PhotoNormalizer } from './photo-normalizer';
 
@@ -33,6 +35,31 @@ describe('bounded normalized profile photos', () => {
     const meta = await sharp(output).metadata();
     expect([meta.width, meta.height]).toEqual([128, 64]);
   });
+
+  it('rejects APNG even when libvips exposes only its valid default PNG frame', async () => {
+    const bytes = await readFile(
+      join(__dirname, '../../../test/fixtures/animated-profile.png'),
+    );
+    expect((await sharp(bytes).metadata()).format).toBe('png');
+    await expect(
+      normalizer.normalize({ bytes, mime: 'image/png' }),
+    ).rejects.toMatchObject({ code: 'bad_request' });
+  });
+
+  it('rejects an encoder result beyond the final 2 MiB limit', async () => {
+    const bytes = await create().png().toBuffer();
+    const prototype = Object.getPrototypeOf(sharp(bytes)) as sharp.Sharp;
+    const encode = jest
+      .spyOn(prototype, 'toBuffer')
+      .mockResolvedValue(Buffer.alloc(2 * 1024 * 1024 + 1) as never);
+    try {
+      await expect(
+        normalizer.normalize({ bytes, mime: 'image/png' }),
+      ).rejects.toMatchObject({ code: 'bad_request' });
+    } finally {
+      encode.mockRestore();
+    }
+  });
   it.each([
     [63, 64],
     [64, 63],
@@ -45,7 +72,12 @@ describe('bounded normalized profile photos', () => {
   });
   it('rejects animation even when the first frame is valid', async () => {
     const png = await create().png().toBuffer();
-    const bytes = await sharp([png, png], { join: { animated: true } })
+    const blue = await sharp({
+      create: { width: 128, height: 64, channels: 3, background: '#00f' },
+    })
+      .png()
+      .toBuffer();
+    const bytes = await sharp([png, blue], { join: { animated: true } })
       .webp()
       .toBuffer();
     expect((await sharp(bytes).metadata()).pages).toBe(2);

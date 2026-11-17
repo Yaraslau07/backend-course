@@ -13,6 +13,7 @@ Rules that span several lessons. Every feature must follow them. They are distil
 | `deleted` | no | deletion worker after anonymization |
 
 - Every token (access and refresh) is accepted only for an existing `active` user, checked against the DB on each request.
+- Profile PATCH, photo replacement and clearing edit only `active`/`blocked` targets. Direct email/status needs `users@update_any` even for self; self email challenges remain self-only. No-op normalized writes leave `updated_at` unchanged.
 - Login gives one `401 invalid_credentials` for: unknown email, wrong password, any status other than `active`.
 - An access or refresh failure gives one `401 invalid_session`. The DB being down gives `503`, never `401`.
 - Only an `active` user counts as a holder of `rbac@manage`. No operation may leave zero such users; that is a `409`.
@@ -141,3 +142,5 @@ email (cleartext), password, password hash, OTP, magic-link token, HMAC, JWT, `C
 ## Background work
 
 No external broker: jobs are DB rows claimed with `UPDATE … RETURNING` (or `FOR UPDATE SKIP LOCKED`) under a lease. Every eraser and storage delete is idempotent, and `not_found` counts as success.
+
+Storage cleanup (C13) uses a transaction-held `SKIP LOCKED` row lock through the bounded delete instead of a persisted lease/running state. Reconciliation checks the same database's photo references and coordinates with pending adoption using a shared/exclusive transaction advisory lock (D53). Never pair automatic reconciliation with a temporary/unrelated reference database.

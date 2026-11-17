@@ -50,7 +50,7 @@ Every error is `{ statusCode, code, message, requestId }`, sometimes with safe e
 
 `http/` holds request files for the WebStorm HTTP Client (pick the `dev` environment).
 
-Implemented through C12: registration/login, RBAC administration, safe profile reads, protected photo downloads, and admin user listing. `http/users.http` covers the profile and signed-cursor list requests. Photo uploads and production S3 storage arrive in C13; the C12 local photo reader uses `STORAGE_LOCAL_ROOT` (default `.storage`) in development/test only.
+Implemented through C13: registration/login, RBAC administration, safe profile reads/listing, profile updates, verified email changes, normalized photo uploads, private S3 storage and background cleanup. `http/users.http` covers reads/listing; `http/users-update.http` covers updates. See [storage setup](docs/storage-setup.md) for AWS permissions and configuration. Local storage uses `STORAGE_LOCAL_ROOT` (default `.storage`) in development/test only; production defaults to S3.
 
 ## Project structure
 

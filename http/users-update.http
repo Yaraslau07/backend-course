@@ -1,0 +1,89 @@
+# C13 (spec 1.5). Sign in with auth.http. The HTTP client keeps access cookies.
+# Self uses users@update; foreign writes and direct email/status need update_any too.
+@userId = <your-user-id>
+@targetUserId = <another-user-id>
+@challengeId = <challengeId-from-202>
+
+### Name change: 200 with exactly seven profile fields; repeating it is a timestamp no-op
+PATCH {{baseUrl}}/users/{{userId}}
+Content-Type: application/json
+
+{"displayName": "  Eva  "}
+
+### Clear the display name
+PATCH {{baseUrl}}/users/{{userId}}
+Content-Type: application/json
+
+{"displayName": null}
+
+### Direct self email without update_any: 403; use the challenge below
+PATCH {{baseUrl}}/users/{{userId}}
+Content-Type: application/json
+
+{"email": "new@example.com"}
+
+### Start self email change: 202; inspect Mailpit at localhost:8025
+POST {{baseUrl}}/users/{{userId}}/email-change
+Content-Type: application/json
+
+{"newEmail": "new@example.com"}
+
+### Resend: 429 until 60 seconds; at most five issued emails per hour
+POST {{baseUrl}}/users/{{userId}}/email-change/resend
+Content-Type: application/json
+
+{"challengeId": "{{challengeId}}"}
+
+### Confirm OTP with the same active session: 200
+POST {{baseUrl}}/users/{{userId}}/email-change/confirm
+Content-Type: application/json
+
+{"challengeId": "{{challengeId}}", "code": "<six-digits-from-mail>"}
+
+### With EMAIL_CHANGE_METHOD=magic_link: POST the mail's fragment token
+POST {{baseUrl}}/users/{{userId}}/email-change/confirm
+Content-Type: application/json
+
+{"token": "<challengeId.secret-from-fragment>"}
+
+### Normalize and replace a photo: WebStorm asks you to select a local image
+# Exactly one file, JPEG/PNG/WebP, <=5 MiB; no other multipart fields.
+PUT {{baseUrl}}/users/{{userId}}/photo
+Content-Type: multipart/form-data; boundary=course-photo
+
+--course-photo
+Content-Disposition: form-data; name="file"; filename="photo.jpg"
+Content-Type: image/jpeg
+
+< ./photo.jpg
+--course-photo--
+
+### The normalized WebP is served through the protected API
+GET {{baseUrl}}/users/{{userId}}/photo
+
+### Clear photo: 204, no body; repeat is a timestamp no-op
+DELETE {{baseUrl}}/users/{{userId}}/photo
+
+### Admin direct email: 200; cancels an outstanding self challenge as admin_override
+PATCH {{baseUrl}}/users/{{targetUserId}}
+Content-Type: application/json
+
+{"email": "admin-updated@example.com"}
+
+### Admin block: stops access/refresh; cannot block the last RBAC manager (409)
+PATCH {{baseUrl}}/users/{{targetUserId}}
+Content-Type: application/json
+
+{"status": "blocked"}
+
+### Admin unblock (pending/deleting/deleted cannot be changed this way)
+PATCH {{baseUrl}}/users/{{targetUserId}}
+Content-Type: application/json
+
+{"status": "active"}
+
+### Reject duplicate JSON keys: 400
+PATCH {{baseUrl}}/users/{{userId}}
+Content-Type: application/json
+
+{"displayName": "first", "displayName": "second"}

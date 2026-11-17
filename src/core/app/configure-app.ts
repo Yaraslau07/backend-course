@@ -1,4 +1,5 @@
 import fastifyCookie from '@fastify/cookie';
+import multipart from '@fastify/multipart';
 import helmet from '@fastify/helmet';
 import { ValidationPipe } from '@nestjs/common';
 import {
@@ -12,6 +13,7 @@ import { AppConfig } from '@/core/config/config.types';
 import { AppException } from '@/core/errors/app.exception';
 import { validationExceptionFactory } from '@/core/errors/validation';
 import { genReqId } from '@/core/logging/request-id';
+import { duplicateJsonKey } from './json-keys';
 
 export const ACCESS_COOKIE = 'access_token';
 
@@ -87,11 +89,14 @@ export async function configureApp(
     { bodyLimit: JSON_BODY_LIMIT },
     (request, body, done) => {
       // Nest hands over a Buffer and types the request loosely (HTTP/2 too); this app is HTTP/1 only.
+      const source = Buffer.isBuffer(body) ? body.toString('utf8') : body;
       void parseJson(
         request as Parameters<typeof parseJson>[0],
-        Buffer.isBuffer(body) ? body.toString('utf8') : body,
+        source,
         (error, value) => {
           if (error) done(new AppException('invalid_json'), undefined);
+          else if (duplicateJsonKey(source))
+            done(new AppException('bad_request'), undefined);
           else done(null, value);
         },
       );
@@ -100,6 +105,15 @@ export async function configureApp(
 
   // Auth cookies are plain JWTs with their own signatures, so no cookie-signing secret.
   await app.register(fastifyCookie);
+  await app.register(multipart, {
+    limits: {
+      fileSize: 5 * 1024 * 1024,
+      files: 1,
+      fields: 0,
+      parts: 1,
+      headerPairs: 20,
+    },
+  });
 
   app.enableCors({
     origin: config.CORS_ORIGINS, // exact origins only, never "*", because requests carry credentials

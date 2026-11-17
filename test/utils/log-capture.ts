@@ -47,6 +47,8 @@ export class LogCapture {
     const secrets = [
       ...SECRET_KEY_NAMES.map((name) => config[name]),
       ...config.USER_LIST_CURSOR_HMAC_KEYS.map((entry) => entry.key),
+      ...(config.S3_ACCESS_KEY_ID ? [config.S3_ACCESS_KEY_ID] : []),
+      ...(config.S3_SECRET_ACCESS_KEY ? [config.S3_SECRET_ACCESS_KEY] : []),
       // A short password like the test DB's "postgres" also appears in stack paths; only check real ones.
       ...(config.POSTGRES_PASSWORD.length >= 12
         ? [config.POSTGRES_PASSWORD]
