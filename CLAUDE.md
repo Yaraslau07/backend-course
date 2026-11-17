@@ -49,6 +49,8 @@ npm run migration:check     # fails if entities and the migrated DB differ (CI r
 - **Email challenges go through `ChallengeEngine`** (`src/modules/challenges/`). In one transaction: `findUserId()` (unlocked), lock the user row, call the engine, `claim()` on success; commit; then `throw outcome.error` if it refused, and `deliver()` mail last. Never throw inside the transaction for a wrong OTP: the counted attempt must commit (D38).
 - **Passwords go through `PasswordHasher`** (`src/modules/auth/password-hasher.ts`): argon2id, never trimmed, checked by `@PasswordPolicy()` before hashing. Hash before opening a transaction (D40).
 - **Tokens go through `TokenService`, cookies through `AuthCookies`** (`src/modules/auth/`). Sign the pair before setting any cookie, so a failure sends no `Set-Cookie`. Never put a token in a body, header or URL. Protected routes get the user id from `request.authUserId`, set by the access check; never trust roles or ids from the token, body or query.
+- **RBAC changes go through `RbacAdminService.change()`** (lock `rbac_policy_state`, change, check that an active `rbac@manage` holder remains, bump the version). A direct SQL change to RBAC tables must bump `rbac_policy_state.version` in the same transaction, or instances keep their old snapshot. In handlers, take the actor from `@CurrentUserId()`, never from the body.
+- **E2E and RBAC:** call `ensureBootstrapped(app)` (`test/utils/rbac.ts`) and create users with `actorWithRoles()`; never assume you hold the only admin. Only the bootstrap suite wipes RBAC tables.
 - **Permission before lookup:** a protected handler never reads the target resource before RBAC allows it, so the answer is `403`, not `404`.
 
 ## Gotchas

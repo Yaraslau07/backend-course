@@ -5,13 +5,12 @@ A running list of what's still outstanding. Check it before assuming something i
 ## Database
 - The schema covers Part 1 only. Still to come, each with its own migration: rate-limit counters (C5), the list-search indexes on `users` (C12), `transformations` (C15).
 - `POSTGRES_MIGRATIONS_RUN=false` by default, so a deploy must run `npm run migration:run` (or set the flag) itself. CI and `npm run test:e2e` migrate their own database.
-- `grants.all_actions = true` should mean "no `grant_actions` rows". That spans two tables, so it's enforced by the RBAC service (C10), not by a constraint.
+- `grants.all_actions = true` should mean "no `grant_actions` rows". That spans two tables, so the admin service never writes such rows and a snapshot reload refuses them (D45); a direct SQL change could still create one, and protected routes would then answer 503 until it is fixed.
 - `ck_deletion_jobs_attempts` caps starts at 5. The deletion worker's claim (C14) must move an expired `running` job with 5 attempts to `failed`; a plain `attempts + 1` on it would violate the constraint.
 - No entity is registered with a Nest module yet (`TypeOrmModule.forFeature`); each feature does that when it first needs a repository.
 
 ## Phase 1 framework pieces (deliberately not in Phase 0)
-- **Protected routes fail closed after authentication** (D25, D43): until the authorization chain lands in C11, every `@RequirePermission` route (and a receipt route called without its header) checks the access cookie (`401 invalid_session`), then answers `503 authorization_unavailable`.
-- **CSRF on protected routes** runs after identity, so it arrives with the chain in C11 (D28). Public writes are checked now.
+- **The protected chain is partial** (D46): access → CSRF → IP limits → RBAC run now. User-keyed rate limits and the resource/ownership step arrive with C11; until then a protected route that declares a user-keyed limit answers `503 authorization_unavailable`.
 - **Rate limits are in place, but partly unused yet:** each policy is applied by the checkpoint that adds its route (registration C8, login and refresh C9, …). User-keyed ones start working with the protected chain in C11.
 
 ## Infrastructure
@@ -26,8 +25,10 @@ A running list of what's still outstanding. Check it before assuming something i
 ## Rate limits
 - `TRUST_PROXY` must be `true` behind a reverse proxy, or every client shares the proxy's IP budget. It must stay `false` when the app is reachable directly, or a client can pick its own IP with `X-Forwarded-For`.
 
-## Registration
-- Activation assigns no `user` role until RBAC exists (C10); the bootstrap then gives it to every active user without roles (spec 1.0 and 1.1).
+## RBAC
+- **Blocking and deletion don't run the last-holder check yet.** Only an active user counts as an `rbac@manage` holder, so blocking (C13) and deletion (C14) must take the policy lock and run the same check before they change the status.
+- **Validation failures (400) on admin routes are logged by the error filter, not as `rbac_change` events;** refusals the service decides (404, 409, a 400 for a foreign action) are.
+- **Before the bootstrap there is no `user` role,** so an activation assigns nothing; the bootstrap then gives `user` to every active user without roles.
 
 ## Authentication
 - **Sessions are stateless (spec 1.2):** a refresh token can't be revoked before its 30-day `exp`, and reuse after rotation isn't detected. Blocking or deleting the user is the only way to end a session early, because every token is checked against the user's current status.

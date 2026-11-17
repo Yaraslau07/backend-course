@@ -69,6 +69,10 @@ access cookie → current user is `active` → CSRF (cross-origin writes) → RB
 | 400 | `invalid_challenge` | challenge not found, expired, wrong secret, replaced, confirmed or consumed as `user_inactive` |
 | 409 | `email_taken` | registration of an email that exists, `pending` included |
 | 409 | `challenge_conflict` | challenge consumed as `admin_override`, `email_conflict` or `job_exists` |
+| 409 | `name_taken` | RBAC role or permission name exists |
+| 409 | `grant_exists` | a second grant for the same role and permission |
+| 409 | `resource_in_use` | RBAC: deleting a role with grants or users, a granted permission, or an action a grant lists |
+| 409 | `last_rbac_manager` | the change would leave no active user with `rbac@manage` |
 | 429 | `attempts_exhausted` | the 5th wrong OTP already consumed the challenge |
 | 429 | `resend_cooldown` | a new email within 60 s of the last send (`retryAfterSeconds`) |
 | 409 | `file_not_ready` | download while `storageStatus=pending` |
