@@ -354,6 +354,17 @@ describe('RbacAuthorizer', () => {
     });
   });
 
+  it('logs nothing from allows(): the ownership step logs its own outcome (one category per refusal)', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log');
+    const warn = jest.spyOn(Logger.prototype, 'warn');
+
+    await setup([{ role_id: ROLE }]).allows(USER, 'docs', 'read', 'op');
+    await setup([]).allows(USER, 'docs', 'read', 'op');
+
+    expect(log).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it('answers allows() with true or false instead of throwing', async () => {
     expect(
       await setup([{ role_id: ROLE }]).allows(USER, 'docs', 'read', 'op'),

@@ -43,6 +43,10 @@ class Handlers {
   @RateLimit('users_list_user')
   protectedUserLimited() {}
 
+  @RequirePermission('users', 'list')
+  @RateLimit('users_list_ip', 'users_list_user')
+  protectedBothLimited() {}
+
   @Receipt('Deletion-Receipt')
   receiptOnly() {}
 
@@ -175,6 +179,17 @@ describe('RouteAccessGuard', () => {
     expect(enforce.mock.invocationCallOrder[0]).toBeLessThan(
       authorize.mock.invocationCallOrder[0],
     );
+  });
+
+  it('counts the user limit before the IP limit, so a user past their own limit spends no shared IP budget', async () => {
+    enforce.mockRejectedValueOnce(new AppException('too_many_requests'));
+
+    expect(
+      await rejection(() =>
+        guard.canActivate(contextFor('protectedBothLimited')),
+      ),
+    ).toBe('too_many_requests');
+    expect(enforce.mock.calls).toEqual([['users_list_user', [USER]]]);
   });
 
   it('stops at an exceeded user limit: 429, RBAC not asked', async () => {

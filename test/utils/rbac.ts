@@ -105,24 +105,26 @@ export async function ensureProbePermission(
   app: NestFastifyApplication,
 ): Promise<string> {
   return app.get(DataSource).transaction(async (manager) => {
-    const [existing] = await manager.query<{ id: string }[]>(
-      `SELECT id FROM permissions WHERE name = 'probe'`,
+    const created = await manager.query<{ id: string }[]>(
+      `INSERT INTO permissions (name) VALUES ('probe') ON CONFLICT (name) DO NOTHING RETURNING id`,
     );
-    const id =
-      existing?.id ??
-      (
-        await manager.query<{ id: string }[]>(
-          `INSERT INTO permissions (name) VALUES ('probe') RETURNING id`,
-        )
-      )[0].id;
-    await manager.query(
+    const [{ id }] = created.length
+      ? created
+      : await manager.query<{ id: string }[]>(
+          `SELECT id FROM permissions WHERE name = 'probe'`,
+        );
+    const added = await manager.query<{ action: string }[]>(
       `INSERT INTO permission_actions (permission_id, action)
-       SELECT $1, unnest(ARRAY['read', 'write', 'read_any']) ON CONFLICT DO NOTHING`,
+       SELECT $1, unnest(ARRAY['read', 'write', 'read_any']) ON CONFLICT DO NOTHING
+       RETURNING action`,
       [id],
     );
-    await manager.query(
-      `UPDATE rbac_policy_state SET version = version + 1, updated_at = now() WHERE id = 1`,
-    );
+    // Only a real change moves the version; otherwise every suite would force needless reloads.
+    if (created.length > 0 || added.length > 0) {
+      await manager.query(
+        `UPDATE rbac_policy_state SET version = version + 1, updated_at = now() WHERE id = 1`,
+      );
+    }
     return id;
   });
 }
@@ -143,10 +145,10 @@ export async function probeRole(
       `INSERT INTO grants (role_id, permission_id, all_actions) VALUES ($1, $2, $3) RETURNING id`,
       [role.id, probeId, actions === undefined],
     );
-    for (const action of actions ?? []) {
+    if (actions?.length) {
       await manager.query(
-        `INSERT INTO grant_actions (grant_id, permission_id, action) VALUES ($1, $2, $3)`,
-        [grant.id, probeId, action],
+        `INSERT INTO grant_actions (grant_id, permission_id, action) SELECT $1, $2, unnest($3::text[])`,
+        [grant.id, probeId, actions],
       );
     }
     await manager.query(

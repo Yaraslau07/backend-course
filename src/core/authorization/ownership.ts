@@ -6,6 +6,9 @@ import { RbacAuthorizer } from '@/modules/rbac/rbac-authorizer';
 /** Whether the request acts on the caller's own resource (spec 1.4 §1.5: `self` or `foreign`). */
 export type Scope = 'self' | 'foreign';
 
+/** The same uuid, whatever its case (ParseUUIDPipe accepts uppercase; tokens carry lowercase). */
+const sameId = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
 /**
  * Spec 1.3 §1.3.4: the resource and ownership step, after the route's own pair has passed RBAC.
  * Handlers call it; the guard can't, because only the handler knows the target.
@@ -28,7 +31,8 @@ export class Ownership {
     anyAction: string,
     operation: string,
   ): Promise<Scope> {
-    if (actorUserId === targetUserId) return 'self';
+    // Ids from the token are lowercase; a path id may arrive in uppercase and is the same uuid.
+    if (sameId(actorUserId, targetUserId)) return 'self';
     if (await this.rbac.allows(actorUserId, permission, anyAction, operation)) {
       return 'foreign';
     }
@@ -53,7 +57,7 @@ export class Ownership {
     ownerUserId: string,
     operation: string,
   ): void {
-    if (actorUserId === ownerUserId) return;
+    if (sameId(actorUserId, ownerUserId)) return;
     this.logger.warn(
       {
         event: 'ownership',

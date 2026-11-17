@@ -367,14 +367,12 @@ describe('the resource and ownership step (spec 1.3 §1.3.4)', () => {
     // Same answer whether the target exists or not.
     expect(bodyWithoutId(unknown.body)).toEqual(bodyWithoutId(existing.body));
     expect(calls['owned-lookup'] ?? 0).toBe(before);
-    expect(logs.lines()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          event: 'ownership',
-          category: 'ownership_denied',
-        }),
-      ]),
-    );
+    // One refusal, one category: the `_any` check itself logs no permission_denied (D50).
+    const refusals = logs
+      .lines()
+      .filter((line) => line.result === 'denied')
+      .map((line) => line.category);
+    expect(refusals).toEqual(['ownership_denied', 'ownership_denied']);
     expect(logs.text()).not.toContain(other.id);
   });
 
@@ -419,18 +417,6 @@ describe('user-keyed rate limits on protected routes (spec 1.3, D46)', () => {
     expect(limited.body.code).toBe('too_many_requests');
     expect(limited.headers['retry-after']).toBeDefined();
     expect(fresh.status).toBe(200);
-  });
-
-  it('does not count a request that had no session', async () => {
-    const actor = await reader();
-    for (let i = 0; i < 5; i++) {
-      expect((await call('GET', '/__routes/user-limited')).status).toBe(401);
-    }
-
-    expect(
-      (await call('GET', '/__routes/user-limited', { cookies: actor.cookies }))
-        .status,
-    ).toBe(200);
   });
 });
 

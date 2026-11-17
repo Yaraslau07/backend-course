@@ -39,6 +39,16 @@ describe('Ownership', () => {
     expect(allows).not.toHaveBeenCalled();
   });
 
+  it('treats the caller’s own id in uppercase as self (ParseUUIDPipe accepts either case)', async () => {
+    expect(
+      await ownership.selfOr(ME, ME.toUpperCase(), 'users', 'read_any', 'op'),
+    ).toBe('self');
+    expect(() =>
+      ownership.assertOwner(ME, ME.toUpperCase(), 'op'),
+    ).not.toThrow();
+    expect(allows).not.toHaveBeenCalled();
+  });
+
   it('lets a foreign id through when the caller has the `_any` action', async () => {
     allows.mockResolvedValue(true);
 

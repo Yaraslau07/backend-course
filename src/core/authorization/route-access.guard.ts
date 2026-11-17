@@ -7,20 +7,19 @@ import {
 import type { FastifyRequest } from 'fastify';
 
 import { AppException } from '@/core/errors/app.exception';
+import { getRouteRateLimits } from '@/core/rate-limit/rate-limit.decorator';
 import { RateLimiter } from '@/core/rate-limit/rate-limiter.service';
 import { AccessAuthenticator } from '@/modules/auth/access-authenticator';
 import { RbacAuthorizer } from '@/modules/rbac/rbac-authorizer';
 
 import { CsrfPolicy } from './csrf';
-import { getRouteRateLimits } from '@/core/rate-limit/rate-limit.decorator';
-
 import { getRouteAccess } from './route-access';
 
 /**
  * The first step of every request (registered globally). It reads the route's declaration and
- * decides which branch applies, checking CSRF on writes that don't go through the session chain.
- * The protected branch authenticates first (spec 1.2 §1.3.6); until the rest of the chain lands
- * (C11) it then fails closed: no handler that needs a permission can run before RBAC exists.
+ * decides which branch applies: public and internal routes get CSRF and IP limits; a receipt with
+ * its header goes to the handler, which checks it; everything else runs the protected chain
+ * (`protectedChain`, spec 1.3). A missing or broken declaration fails closed with 503.
  */
 @Injectable()
 export class RouteAccessGuard implements CanActivate {
@@ -79,7 +78,8 @@ export class RouteAccessGuard implements CanActivate {
    * Spec 1.3 §1.3.1 and §1.6, in this order:
    * 1. access → active user (the authenticator: 401, or 503 if the user can't be read);
    * 2. CSRF on writes, after identity (D28);
-   * 3. the route's IP and user limits (429), by `request.ip` and the verified user id;
+   * 3. the route's user limits (by the verified id), then its IP limits (429): one user past their
+   *    own limit doesn't fill the IP budget others behind the same address share (D50);
    * 4. RBAC (403, or 503 without a current policy).
    * The resource and ownership step then belongs to the handler (`Ownership`, D48).
    */
@@ -91,10 +91,10 @@ export class RouteAccessGuard implements CanActivate {
     const operation = this.handlerName(context);
     const userId = await this.authenticator.authenticate(request);
     this.csrf.assert(request, operation);
-    await this.enforceIpLimits(context, request);
     for (const policy of getRouteRateLimits(context.getHandler()).user) {
       await this.limiter.enforce(policy, [userId]);
     }
+    await this.enforceIpLimits(context, request);
     await this.authorizer.authorize(
       userId,
       pair.permission,

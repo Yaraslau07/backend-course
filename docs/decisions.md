@@ -280,3 +280,19 @@ The verified user id goes to handlers through `@CurrentUserId()`, which fails cl
 D8 logged `method` and `path`, on the view that path segments are ids. Spec 1.3 §1.5 allows a target id in logs only once it may be read, and spec 1.6 forbids user ids in deletion logs. A path like `/users/{id}` is logged before either check, so it breaks both rules. The completion line now has `route`, the pattern Fastify matched (`/users/:userId`), or `null` for a URL that matched no route, since it could be anything. Handlers log the target id themselves once it is allowed.
 
 pino-http binds the request serializer when the request starts, before the route is on the raw request. So the bound `req` carries only `id` and `method`, and `route` is added by `customSuccessObject` / `customErrorObject` when the request completes. The pattern is copied onto the raw request in `configureApp`'s `onRequest` hook.
+
+## D50: C11 and phase 1c review fixes (2026-11-17, amends D48)
+`/code-review medium` ran on `main...HEAD` (C11) and on `44ffd0a...HEAD` (all of phase 1c, C7–C11). `/security-review` on the phase range found nothing at the reporting bar.
+
+**Fixed:**
+- **Ownership compares ids case-insensitively.** `ParseUUIDPipe` accepts an uppercase uuid while token ids are lowercase, so a user's own id in uppercase came out as `foreign` and got `403 ownership_denied`.
+- **One refusal, one category.** `RbacAuthorizer.allows()` (the ownership step's `_any` check) no longer logs. Before, a refused foreign request logged both `permission_denied` and `ownership_denied`.
+- **User limits are counted before IP limits** (amends D48). A user past their own limit used to spend the IP budget that everyone behind the same address shares. Now an IP refusal costs only the requesting user's budget.
+- **The test helpers bump the policy version only for a real change**, and `rbac.e2e-spec.ts` uses the shared probe setup instead of its own copy.
+- The guard's class comment was stale; a redundant type cast and an import order were tidied.
+- **One e2e test that couldn't fail was removed.** It claimed that an unauthenticated request doesn't count against a user limit, which holds by construction. The guard unit tests cover the real ordering: CSRF before limits, and limits before RBAC.
+
+**Not changed:**
+- **Reusing the guard's snapshot and roles in the ownership step.** It would save two queries on foreign requests, but it would make handlers depend on state the guard leaves on the request. Revisit if profiling shows it matters.
+- **`request.routeOptions.url` building an object on each request.** This is a micro-optimisation.
+- **Merging `allows()` into `decide()`.** They now differ (logging), so both are kept.
