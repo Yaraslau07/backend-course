@@ -240,6 +240,7 @@ describe('AccessAuthenticator', () => {
   });
 
   it('answers an unreadable user with 503 authorization_unavailable, never 401', async () => {
+    const error = jest.spyOn(Logger.prototype, 'error');
     const down = Object.assign(new Error('connect failed'), {
       code: 'ECONNREFUSED',
     });
@@ -250,6 +251,9 @@ describe('AccessAuthenticator', () => {
         auth.authenticate(requestWith({ access_token: access() })),
       ),
     ).toBe('authorization_unavailable');
+    expect((error.mock.calls as unknown[][])[0][0]).toMatchObject({
+      category: 'users',
+    });
   });
 
   it('lets an error that is not an outage through to the filter (a 500, not a 503)', async () => {

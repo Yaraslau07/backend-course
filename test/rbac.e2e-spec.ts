@@ -433,8 +433,11 @@ describe('The access check on protected routes (spec 1.1 §1.3.1)', () => {
     expect(logs.lines()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          event: 'access_denied',
+          event: 'rbac_decision',
+          result: 'denied',
+          category: 'permission_denied',
           actorUserId: actor.id,
+          operation: 'RouteProbeController.protectedRoute',
           permission: 'probe',
           action: 'read',
         }),

@@ -30,6 +30,8 @@ export class RbacAuthorizer {
     userId: string,
     permission: string,
     action: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- logged in the feat commit
+    _operation = 'unknown',
   ): Promise<void> {
     // Independent reads, in parallel: the policy version (and a reload if needed) and the roles.
     const roles = this.db.query<{ role_id: string }[]>(
@@ -65,6 +67,21 @@ export class RbacAuthorizer {
     );
     throw new AppException('permission_denied');
   }
+
+  /**
+   * The same decision without throwing, for a second check inside a handler (the ownership step's
+   * `users@read_any`). `503 authorization_unavailable` still throws: unavailability is never a no.
+   */
+  /* eslint-disable @typescript-eslint/no-unused-vars -- signature-only stub, implemented in the feat commit */
+  allows(
+    _userId: string,
+    _permission: string,
+    _action: string,
+    _operation: string,
+  ): Promise<boolean> {
+    throw new Error('not implemented');
+  }
+  /* eslint-enable @typescript-eslint/no-unused-vars */
 
   /**
    * In the activating transaction: gives the user the `user` role if they don't have it yet.

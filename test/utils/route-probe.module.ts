@@ -1,11 +1,24 @@
-import { Controller, Get, Module, Post } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Module,
+  Param,
+  ParseUUIDPipe,
+  Post,
+} from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 
+import { AuthorizationModule } from '@/core/authorization/authorization.module';
+import { CurrentUserId } from '@/core/authorization/current-user';
+import { Ownership } from '@/core/authorization/ownership';
 import {
   Internal,
   Public,
   Receipt,
   RequirePermission,
 } from '@/core/authorization/route-access';
+import { AppException } from '@/core/errors/app.exception';
 import { RateLimit } from '@/core/rate-limit/rate-limit.decorator';
 
 /** How many times each probe handler actually ran; a refused request must leave it unchanged. */
@@ -102,7 +115,50 @@ class RouteProbeController {
   }
 }
 
-@Module({ controllers: [RouteProbeController] })
+/** A protected resource with an owner, run through the ownership step like a real handler (C12). */
+@Controller('__routes')
+class OwnershipProbeController {
+  constructor(
+    private readonly ownership: Ownership,
+    @InjectDataSource() private readonly db: DataSource,
+  ) {}
+
+  @Get('owned/:userId')
+  @RequirePermission('probe', 'read')
+  async owned(
+    @CurrentUserId() actor: string,
+    @Param('userId', new ParseUUIDPipe()) target: string,
+  ) {
+    const scope = await this.ownership.selfOr(
+      actor,
+      target,
+      'probe',
+      'read_any',
+      'OwnershipProbeController.owned',
+    );
+    // Only now is the target looked up: a 404 is possible only for someone allowed to search.
+    ran('owned-lookup');
+    const [row] = await this.db.query<{ id: string }[]>(
+      `SELECT id FROM users WHERE id = $1`,
+      [target],
+    );
+    if (!row) throw new AppException('not_found');
+    return { scope };
+  }
+
+  /** 60 per user per minute (the users-list policy, borrowed for the probe). */
+  @Get('user-limited')
+  @RequirePermission('probe', 'read')
+  @RateLimit('users_list_user')
+  userLimited() {
+    return ran('user-limited');
+  }
+}
+
+@Module({
+  imports: [AuthorizationModule],
+  controllers: [RouteProbeController, OwnershipProbeController],
+})
 export class RouteProbeModule {}
 
 /** The broken routes above, as the startup scan reports them. */

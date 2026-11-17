@@ -241,16 +241,39 @@ describe('RbacPolicyStore', () => {
     expect(await readiness()).toBe('up');
   });
 
-  it('answers 503 when the version cannot be read for an outage', async () => {
+  it('answers 503 when the version cannot be read for an outage, logged as rbac_version', async () => {
     const { store } = setup({
       version: '1',
       rows: policy('1'),
       fail: outage(),
     });
+    const error = jest.spyOn(Logger.prototype, 'error');
 
     expect(await codeOf(() => store.current())).toBe(
       'authorization_unavailable',
     );
+    expect(
+      (error.mock.calls as unknown[][]).map(([fields]) => fields),
+    ).toContainEqual(expect.objectContaining({ category: 'rbac_version' }));
+  });
+
+  it('logs a failed reload as rbac_snapshot', async () => {
+    const state = { version: '1', rows: policy('1') };
+    const { store } = setup(state);
+    await store.current();
+    state.version = '2';
+    state.rows = {
+      ...policy('2'),
+      grants: [],
+      grantActions: [{ grant_id: 'x', permission_id: PERM, action: 'read' }],
+    };
+    const error = jest.spyOn(Logger.prototype, 'error');
+
+    await codeOf(() => store.current());
+
+    expect(
+      (error.mock.calls as unknown[][]).map(([fields]) => fields),
+    ).toContainEqual(expect.objectContaining({ category: 'rbac_snapshot' }));
   });
 
   it('answers 503 when the policy state row is missing', async () => {
@@ -293,25 +316,63 @@ describe('RbacAuthorizer', () => {
     );
   }
 
-  it('resolves when a role of the user allows the pair', async () => {
+  it('resolves when a role of the user allows the pair, and logs the admission (spec 1.3 §1.5)', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log');
+
     await expect(
-      setup([{ role_id: ROLE }]).authorize(USER, 'docs', 'read'),
+      setup([{ role_id: ROLE }]).authorize(USER, 'docs', 'read', 'Docs.read'),
     ).resolves.toBeUndefined();
-  });
-
-  it('refuses with 403 permission_denied and logs the actor and pair', async () => {
-    const warn = jest.spyOn(Logger.prototype, 'warn');
-
-    expect(await codeOf(() => setup([]).authorize(USER, 'docs', 'read'))).toBe(
-      'permission_denied',
-    );
-    expect(warn.mock.calls[0][0]).toMatchObject({
-      event: 'access_denied',
+    expect(log.mock.calls[0][0]).toEqual({
+      event: 'rbac_decision',
+      result: 'allowed',
       actorUserId: USER,
+      operation: 'Docs.read',
       permission: 'docs',
       action: 'read',
-      reason: 'no_grant',
+      version: '9',
     });
+  });
+
+  it('refuses with 403 permission_denied and logs the actor, operation, pair and version', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn');
+
+    expect(
+      await codeOf(() =>
+        setup([]).authorize(USER, 'docs', 'read', 'Docs.read'),
+      ),
+    ).toBe('permission_denied');
+    expect(warn.mock.calls[0][0]).toEqual({
+      event: 'rbac_decision',
+      result: 'denied',
+      category: 'permission_denied',
+      reason: 'no_grant',
+      actorUserId: USER,
+      operation: 'Docs.read',
+      permission: 'docs',
+      action: 'read',
+      version: '9',
+    });
+  });
+
+  it('answers allows() with true or false instead of throwing', async () => {
+    expect(
+      await setup([{ role_id: ROLE }]).allows(USER, 'docs', 'read', 'op'),
+    ).toBe(true);
+    expect(await setup([]).allows(USER, 'docs', 'read', 'op')).toBe(false);
+  });
+
+  it('still throws 503 from allows() when the roles cannot be read', async () => {
+    expect(
+      await codeOf(() => setup(outage()).allows(USER, 'docs', 'read', 'op')),
+    ).toBe('authorization_unavailable');
+  });
+
+  it('logs a roles outage with the users dependency category', async () => {
+    const error = jest.spyOn(Logger.prototype, 'error');
+
+    await codeOf(() => setup(outage()).authorize(USER, 'docs', 'read', 'op'));
+
+    expect(error.mock.calls[0][0]).toMatchObject({ category: 'users' });
   });
 
   it('answers 503 when the user roles cannot be read', async () => {

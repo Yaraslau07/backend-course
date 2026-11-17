@@ -5,6 +5,7 @@ import { AuthModule } from '@/modules/auth/auth.module';
 import { RbacModule } from '@/modules/rbac/rbac.module';
 
 import { CsrfPolicy } from './csrf';
+import { Ownership } from './ownership';
 import { RouteAccessGuard } from './route-access.guard';
 import { RouteDeclarationScanner } from './route-scan';
 
@@ -12,8 +13,11 @@ import { RouteDeclarationScanner } from './route-scan';
   imports: [DiscoveryModule, AuthModule, RbacModule],
   providers: [
     CsrfPolicy,
+    Ownership,
     RouteDeclarationScanner,
     { provide: APP_GUARD, useClass: RouteAccessGuard },
   ],
+  // Feature modules import this module for the ownership step in their handlers.
+  exports: [Ownership],
 })
 export class AuthorizationModule {}

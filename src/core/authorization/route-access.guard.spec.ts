@@ -122,7 +122,12 @@ describe('RouteAccessGuard', () => {
   it('authenticates, then asks RBAC for the declared pair with the verified user id', async () => {
     expect(await guard.canActivate(contextFor('protectedRoute'))).toBe(true);
     expect(authenticate).toHaveBeenCalledTimes(1);
-    expect(authorize).toHaveBeenCalledWith(USER, 'users', 'read');
+    expect(authorize).toHaveBeenCalledWith(
+      USER,
+      'users',
+      'read',
+      'Handlers.protectedRoute',
+    );
   });
 
   it('passes the RBAC refusal on (403, or 503 when the policy is unavailable)', async () => {
@@ -162,13 +167,34 @@ describe('RouteAccessGuard', () => {
     expect(enforce).toHaveBeenCalledWith('users_list_ip', ['203.0.113.9']);
   });
 
-  it('fails closed on a route with a user-keyed limit until those are enforced (C11)', async () => {
+  it('enforces a user-keyed limit by the verified user id, after CSRF and before RBAC', async () => {
+    expect(await guard.canActivate(contextFor('protectedUserLimited'))).toBe(
+      true,
+    );
+    expect(enforce).toHaveBeenCalledWith('users_list_user', [USER]);
+    expect(enforce.mock.invocationCallOrder[0]).toBeLessThan(
+      authorize.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('stops at an exceeded user limit: 429, RBAC not asked', async () => {
+    enforce.mockRejectedValueOnce(new AppException('too_many_requests'));
+
     expect(
       await rejection(() =>
         guard.canActivate(contextFor('protectedUserLimited')),
       ),
-    ).toBe('authorization_unavailable');
+    ).toBe('too_many_requests');
     expect(authorize).not.toHaveBeenCalled();
+  });
+
+  it('does not count a protected write that CSRF refused against the user limit', async () => {
+    await rejection(() =>
+      guard.canActivate(
+        contextFor('protectedUserLimited', EVIL, 'http', 'POST'),
+      ),
+    );
+    expect(enforce).not.toHaveBeenCalled();
   });
 
   it('answers a protected route with the authenticator refusal (401, or 503 with the DB down)', async () => {
@@ -231,7 +257,12 @@ describe('RouteAccessGuard', () => {
 
   it('without the header, a receipt route with a pair follows the protected chain', async () => {
     expect(await guard.canActivate(contextFor('receiptOrPair'))).toBe(true);
-    expect(authorize).toHaveBeenCalledWith(USER, 'users', 'delete');
+    expect(authorize).toHaveBeenCalledWith(
+      USER,
+      'users',
+      'delete',
+      'Handlers.receiptOrPair',
+    );
 
     authenticate.mockRejectedValueOnce(new AppException('invalid_session'));
     expect(

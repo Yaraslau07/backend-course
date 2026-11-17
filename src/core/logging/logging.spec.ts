@@ -25,21 +25,27 @@ describe('genReqId()', () => {
 });
 
 describe('serializers', () => {
-  it('log method and path, never the query string or headers', () => {
+  it('log method and the matched route pattern: never the concrete path, query string or headers', () => {
     const req = {
       id: 'r1',
       method: 'GET',
-      url: '/admin/users?q=secret&cursor=abc',
+      url: '/users/3f2b8f0e-6a1d-4c8e-9a51-0d7f6b2c1e44?q=secret&cursor=abc',
+      routePattern: '/users/:userId',
       headers: { cookie: 'access_token=x' },
     } as unknown as IncomingMessage;
+
+    // Spec 1.3 §1.5: a target id is logged only once it may be read, so not from the path.
     expect(serializeRequest(req)).toEqual({
       id: 'r1',
       method: 'GET',
-      path: '/admin/users',
+      route: '/users/:userId',
     });
-    expect(serializeRequest({ method: 'GET' } as IncomingMessage).path).toBe(
-      '',
-    );
+  });
+
+  it('logs no route for a request that matched none (its URL could hold anything)', () => {
+    expect(
+      serializeRequest({ method: 'GET', url: '/nope/123' } as IncomingMessage),
+    ).toEqual({ id: undefined, method: 'GET', route: null });
     expect(serializeResponse({ statusCode: 204 } as ServerResponse)).toEqual({
       statusCode: 204,
     });

@@ -99,3 +99,59 @@ export async function actorWithRoles(
 /** A unique, valid role or permission name. */
 export const uniqueName = (prefix: string) =>
   `${prefix}-${randomUUID().slice(0, 8)}`;
+
+/** The `probe` permission the probe routes declare, with every action they use. Idempotent. */
+export async function ensureProbePermission(
+  app: NestFastifyApplication,
+): Promise<string> {
+  return app.get(DataSource).transaction(async (manager) => {
+    const [existing] = await manager.query<{ id: string }[]>(
+      `SELECT id FROM permissions WHERE name = 'probe'`,
+    );
+    const id =
+      existing?.id ??
+      (
+        await manager.query<{ id: string }[]>(
+          `INSERT INTO permissions (name) VALUES ('probe') RETURNING id`,
+        )
+      )[0].id;
+    await manager.query(
+      `INSERT INTO permission_actions (permission_id, action)
+       SELECT $1, unnest(ARRAY['read', 'write', 'read_any']) ON CONFLICT DO NOTHING`,
+      [id],
+    );
+    await manager.query(
+      `UPDATE rbac_policy_state SET version = version + 1, updated_at = now() WHERE id = 1`,
+    );
+    return id;
+  });
+}
+
+/** A new role granted these `probe` actions (all of them when `actions` is omitted). */
+export async function probeRole(
+  app: NestFastifyApplication,
+  actions?: string[],
+): Promise<string> {
+  const probeId = await ensureProbePermission(app);
+  const name = uniqueName('probe-role');
+  await app.get(DataSource).transaction(async (manager) => {
+    const [role] = await manager.query<{ id: string }[]>(
+      `INSERT INTO roles (name) VALUES ($1) RETURNING id`,
+      [name],
+    );
+    const [grant] = await manager.query<{ id: string }[]>(
+      `INSERT INTO grants (role_id, permission_id, all_actions) VALUES ($1, $2, $3) RETURNING id`,
+      [role.id, probeId, actions === undefined],
+    );
+    for (const action of actions ?? []) {
+      await manager.query(
+        `INSERT INTO grant_actions (grant_id, permission_id, action) VALUES ($1, $2, $3)`,
+        [grant.id, probeId, action],
+      );
+    }
+    await manager.query(
+      `UPDATE rbac_policy_state SET version = version + 1, updated_at = now() WHERE id = 1`,
+    );
+  });
+  return name;
+}
