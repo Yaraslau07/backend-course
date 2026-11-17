@@ -1,0 +1,101 @@
+# RBAC administration (spec 1.1). Every request needs a signed-in user with rbac@manage.
+#
+# Becoming the first admin: the bootstrap runs once, at startup, on an empty RBAC config.
+#   1. Register a user (http/auth.http) and note its id.
+#   2. Put it in .env: RBAC_BOOTSTRAP_ADMIN_USER_ID=<id>, and restart the app.
+#   3. Sign in as that user (POST /auth/login in http/auth.http); the cookie is kept for the requests below.
+# Without a usable admin id the bootstrap does nothing and tries again at the next start.
+
+### List roles
+GET {{baseUrl}}/admin/rbac/roles
+
+### Create a role: 201; the name is trimmed and lowercased; 409 name_taken if it exists
+POST {{baseUrl}}/admin/rbac/roles
+Content-Type: application/json
+
+{
+  "name": "Support",
+  "description": "Answers tickets"
+}
+
+### Replace a role's name and description: 200 (404 for an unknown id)
+PUT {{baseUrl}}/admin/rbac/roles/<roleId>
+Content-Type: application/json
+
+{
+  "name": "support",
+  "description": null
+}
+
+### Delete a role: 204; 409 resource_in_use while it has grants or users
+DELETE {{baseUrl}}/admin/rbac/roles/<roleId>
+
+### List permissions with their actions
+GET {{baseUrl}}/admin/rbac/permissions
+
+### Create a permission: 1 to 64 unique actions; a repeat is 400
+POST {{baseUrl}}/admin/rbac/permissions
+Content-Type: application/json
+
+{
+  "name": "tickets",
+  "actions": ["read", "close"]
+}
+
+### Replace a permission and its whole action set: removing an action a grant lists is 409
+PUT {{baseUrl}}/admin/rbac/permissions/<permissionId>
+Content-Type: application/json
+
+{
+  "name": "tickets",
+  "actions": ["read", "close", "reopen"]
+}
+
+### Delete a permission: 409 while any role is granted it
+DELETE {{baseUrl}}/admin/rbac/permissions/<permissionId>
+
+### List grants
+GET {{baseUrl}}/admin/rbac/grants
+
+### Grant all actions (no "actions", or []), including ones added later
+POST {{baseUrl}}/admin/rbac/grants
+Content-Type: application/json
+
+{
+  "roleId": "<roleId>",
+  "permissionId": "<permissionId>"
+}
+
+### Grant only some actions: 400 for an action the permission doesn't have, 409 grant_exists for a second grant of the pair
+POST {{baseUrl}}/admin/rbac/grants
+Content-Type: application/json
+
+{
+  "roleId": "<roleId>",
+  "permissionId": "<permissionId>",
+  "actions": ["read"]
+}
+
+### Replace a grant
+PUT {{baseUrl}}/admin/rbac/grants/<grantId>
+Content-Type: application/json
+
+{
+  "roleId": "<roleId>",
+  "permissionId": "<permissionId>",
+  "actions": ["read", "close"]
+}
+
+### Delete a grant: 409 last_rbac_manager if no active user would keep rbac@manage
+DELETE {{baseUrl}}/admin/rbac/grants/<grantId>
+
+### The role ids of a user
+GET {{baseUrl}}/admin/rbac/users/<userId>/roles
+
+### Replace a user's roles; [] removes them all
+PUT {{baseUrl}}/admin/rbac/users/<userId>/roles
+Content-Type: application/json
+
+{
+  "roleIds": ["<roleId>"]
+}

@@ -9,6 +9,7 @@ import type { FastifyRequest } from 'fastify';
 import { AppException } from '@/core/errors/app.exception';
 import { RateLimiter } from '@/core/rate-limit/rate-limiter.service';
 import { AccessAuthenticator } from '@/modules/auth/access-authenticator';
+import { RbacAuthorizer } from '@/modules/rbac/rbac-authorizer';
 
 import { CsrfPolicy } from './csrf';
 import { getRouteRateLimits } from '@/core/rate-limit/rate-limit.decorator';
@@ -29,6 +30,7 @@ export class RouteAccessGuard implements CanActivate {
     private readonly csrf: CsrfPolicy,
     private readonly limiter: RateLimiter,
     private readonly authenticator: AccessAuthenticator,
+    private readonly authorizer: RbacAuthorizer,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -54,11 +56,11 @@ export class RouteAccessGuard implements CanActivate {
         }
         // Without it, a receipt-only route has no other way to know the caller.
         if (!access.pair) throw new AppException('invalid_session');
-        return this.protectedChain(context, request);
+        return this.protectedChain(context, request, access.pair);
       }
 
       case 'protected':
-        return this.protectedChain(context, request);
+        return this.protectedChain(context, request, access);
 
       case 'invalid':
         this.logger.error(
@@ -74,24 +76,32 @@ export class RouteAccessGuard implements CanActivate {
   }
 
   /**
-   * Access → active user (both in the authenticator: 401 invalid_session, or 503 if the user
-   * can't be read). C11 continues with CSRF → IP and user rate limits → RBAC; CSRF and the limits
-   * belong after identity (spec 1.3 step 5), so neither is checked here: the branch still refuses
-   * every authenticated request.
+   * Spec 1.3 order: access → active user (the authenticator: 401, or 503 if the user can't be read)
+   * → CSRF on writes (after identity, D28) → IP limits → RBAC (403, or 503 without a current
+   * policy). User-keyed limits arrive with C11; until then a route that declares one fails closed
+   * rather than running without its limit (D46).
    */
   private async protectedChain(
     context: ExecutionContext,
     request: FastifyRequest,
-  ): Promise<never> {
-    await this.authenticator.authenticate(request);
-    this.logger.warn(
-      {
-        category: 'authorization_chain',
-        handler: this.handlerName(context),
-      },
-      'protected route refused: the authorization chain is not wired yet',
-    );
-    throw new AppException('authorization_unavailable');
+    pair: { permission: string; action: string },
+  ): Promise<true> {
+    const userId = await this.authenticator.authenticate(request);
+    this.csrf.assert(request, this.handlerName(context));
+    // Before the IP limits, so a request refused here doesn't use up the client's budget.
+    if (getRouteRateLimits(context.getHandler()).user.length > 0) {
+      this.logger.warn(
+        {
+          category: 'authorization_chain',
+          handler: this.handlerName(context),
+        },
+        'route refused: user-keyed rate limits are not enforced yet',
+      );
+      throw new AppException('authorization_unavailable');
+    }
+    await this.enforceIpLimits(context, request);
+    await this.authorizer.authorize(userId, pair.permission, pair.action);
+    return true;
   }
 
   /**

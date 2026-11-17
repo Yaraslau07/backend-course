@@ -210,3 +210,50 @@ From the `/code-review` of C2–C6:
 - **Refresh and the access check each have their own "token → active user" code.** Spec 1.2 gives them different answers when the database is down (`503 authorization_unavailable` in the chain, a plain `503` on refresh), so a shared helper would need a flag. The shared part is three lines.
 - **`LoginConfirmDto` copies `RegistrationConfirmDto`.** The two token formats already differ (registration's token has no id, D41), and email change and deletion will add their own fields. A shared DTO waits until C13 shows what is actually common.
 - **`ACCESS_COOKIE` lives in `configure-app.ts`** because Swagger's cookie scheme there needs it. Moving it is cosmetic and can happen in C11 with the chain.
+
+## D45: RBAC snapshot, bootstrap and default role (2026-11-17)
+- **What the snapshot holds:** roles, permissions, their actions, and grants, which is everything except who has which role. It is read in one `REPEATABLE READ` transaction, so the version and the tables come from the same moment. It is checked for what the schema can't express (an all-actions grant lists nothing, a limited grant lists at least one action), and swapped in whole.
+- **User roles are read per request** (`SELECT role_id FROM user_roles WHERE user_id = $1`, on the primary key). Caching them would make every registration and role change invalidate every instance's cache, and the cache would grow with the user count. The spec's coherence rule is about the cached policy. Admin `PUT …/roles` still bumps the version, as spec 1.1 §1.3.5 says.
+- **Activation doesn't bump the version.** Assigning `user` on activation (`assignDefaultRole`, in the activating transaction, `ON CONFLICT DO NOTHING`) changes no cached data. Bumping would put every registration behind the shared `rbac_policy_state` lock, which must also be taken before the user row. Chosen by the author on 2026-11-17.
+- **Version check before every access check;** on a mismatch the instance reloads. Concurrent requests share one reload. A request that joins a reload started before its own version read loads again if the result is older, so a request that starts after an admin change's response always sees that change. While a reload fails, there is no snapshot at all: `503 authorization_unavailable`, and the `rbac` readiness check is down, never an old policy (spec 1.1 §1.3.6 step 6).
+- **An unknown permission or action is a 403** (no rule means no access), logged with its reason (`unknown_permission`, `unknown_action`, `no_grant`).
+- **The bootstrap** runs at startup under the policy lock, so two instances starting together bootstrap once. "Empty" means no roles and no permissions. It needs `RBAC_BOOTSTRAP_ADMIN_USER_ID` to be an existing active user; otherwise it creates nothing, logs a warning, and runs again at the next start. Bootstrapping without an admin would leave a policy nobody can change through the API. Chosen by the author on 2026-11-17.
+  - `admin` gets `rbac` with the listed action `manage`, and `users` with all actions, so later `users` actions reach admins automatically.
+  - `user` gets `users` `read`, `update` and `delete`.
+  - Every active user without a role gets `user`; pending users get it when they confirm.
+- **Admin changes** all share one shape:
+  1. Lock `rbac_policy_state` (first in the lock order).
+  2. Make the change.
+  3. Check that an active user can still do `rbac@manage`, on the state about to be committed. An all-actions grant counts only while the permission still has `manage`.
+  4. Bump the version.
+  
+  Any refusal rolls everything back.
+- **Error codes** (new): `409 name_taken` (`uq_roles_name`, `uq_permissions_name`), `409 grant_exists` (`uq_grants_role_permission`), `409 resource_in_use` (any foreign-key refusal: a role with grants or users, a granted permission, an action a grant lists explicitly) and `409 last_rbac_manager`. The constraints decide, not pre-checks, so concurrent changes can't slip past them.
+- **404 for references in a body** (an unknown `roleId` or `permissionId` in a grant, an unknown role in a user's list), as spec 1.1 §1.4 lists "the role, permission, assignment, or user from the administrative operation". An action that isn't the permission's is `400 validation_failed` (`actionOfPermission`).
+
+## D46: The protected chain runs RBAC now (2026-11-17, amends D25, D28, D43)
+The author chose to wire RBAC in C10 so the admin API works over HTTP. A protected route now runs:
+1. Access check: `401`, or `503` if the user can't be read.
+2. CSRF on writes, after identity (D28).
+3. The route's IP limits.
+4. RBAC: `403 permission_denied`, or `503` without a current policy.
+5. The handler.
+
+What is still for C11: user-keyed rate limits, the resource and ownership step, and the full chain audit. Until then, a protected route that declares a user-keyed limit answers `503`; it doesn't run without its limit. No such route exists yet.
+
+The verified user id goes to handlers through `@CurrentUserId()`, which fails closed (`503`) if the chain didn't set it.
+
+## D47: C10 review fixes (2026-11-17, amends D45)
+`/code-review medium main...HEAD` raised eight findings, and `/security-review` found nothing at the reporting bar.
+
+**Fixed:**
+- **Readiness loads the policy itself when there is no snapshot.** Before, only a protected request triggered the reload. An instance whose first load failed (the database not up yet) stayed not-ready forever, because a load balancer sends no traffic to a not-ready instance.
+- **A failed bootstrap fails the load.** Before, a bootstrap error was only logged, and the empty policy was then loaded as if it were real: everyone got 403 and nobody could repair it. Now every load retries the bootstrap until it completes once.
+- **The `user` role can't be renamed or deleted** (`409 resource_in_use`). Activation finds it by name, so a rename would silently give new users no role. Its description and grants can still change.
+- **Reloads that finish out of order** no longer replace a newer snapshot with an older one. A failed reload clears the snapshot only if no newer one arrived in the meantime.
+- **The user-limit fail-closed check runs before the IP limits,** so a request refused with 503 doesn't use up the client's IP budget.
+- **The version check and the user-roles read run in parallel**, which saves one round trip per protected request.
+- **The refusal log field is `errorCode`,** not `code`, which the logger redacts.
+- **The e2e leak check** matches an all-digit secret (an OTP) only as a whole token. A 6-digit code also turns up by chance inside the UUIDs in the logs, and did once (`challenges.e2e-spec.ts`).
+
+**Not changed:** an activation that commits while the bootstrap transaction is still open can miss both the default-role insert and the bootstrap's backfill. The bootstrap runs once, in `onApplicationBootstrap`, before this instance listens, so only a second instance taking registrations at that exact moment is exposed. Listed in `docs/known-gaps.md`.

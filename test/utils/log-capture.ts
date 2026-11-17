@@ -56,11 +56,21 @@ export class LogCapture {
     for (const value of [...secrets, ...values]) {
       if (value.length === 0) continue;
       // Not `expect(text).not.toContain(value)`: that would print the secret in the failure message.
-      if (text.includes(value)) {
+      if (appears(text, value)) {
         throw new Error(
           `A sensitive value (${value.length} characters, starting "${value.slice(0, 3)}…") was logged`,
         );
       }
     }
   }
+}
+
+/**
+ * A short all-digit secret (an OTP) counts only as a token of its own: "211734" inside a uuid or a
+ * request id is chance, not a leak, and with enough ids in the logs it happens (D47). Anything else
+ * is matched anywhere.
+ */
+function appears(text: string, value: string): boolean {
+  if (!/^\d{1,8}$/.test(value)) return text.includes(value);
+  return new RegExp(`(?<![0-9A-Za-z])${value}(?![0-9A-Za-z])`).test(text);
 }

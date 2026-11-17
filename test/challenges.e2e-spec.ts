@@ -703,9 +703,29 @@ describe('Email challenge engine (e2e)', () => {
 
       const results = await Promise.allSettled([unlocked(), unlocked()]);
 
-      const rejected = results.filter((r) => r.status === 'rejected');
-      expect(rejected).toHaveLength(1);
-      expect(rejected[0].reason).toBeInstanceOf(QueryFailedError);
+      // Exactly one wins. The loser either overlapped (the partial unique index refuses it) or ran
+      // after the winner committed (it sees the new challenge and cools down): which one depends on
+      // timing, never on correctness. Either way there is only one outstanding challenge.
+      const issued = results.filter(
+        (r) => r.status === 'fulfilled' && r.value.ok,
+      );
+      const lost = results.filter((r) => !issued.includes(r));
+      expect(issued).toHaveLength(1);
+      expect(lost).toHaveLength(1);
+      const [loser] = lost;
+      if (loser.status === 'rejected') {
+        expect(loser.reason).toBeInstanceOf(QueryFailedError);
+      } else {
+        expect(loser.value).toMatchObject({
+          ok: false,
+          error: expect.objectContaining({ code: 'resend_cooldown' }) as object,
+        });
+      }
+      const [{ count }] = await db.query<{ count: string }[]>(
+        `SELECT count(*) FROM login_challenges WHERE user_id = $1 AND consumed_at IS NULL`,
+        [user.id],
+      );
+      expect(count).toBe('1');
     });
   });
 

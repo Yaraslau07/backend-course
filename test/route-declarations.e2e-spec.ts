@@ -60,6 +60,7 @@ describe('Route declarations (e2e)', () => {
         checks: {
           database: 'up',
           config: 'up',
+          rbac: 'up',
           route_declarations: 'down',
           smtp: 'up',
         },

@@ -14,6 +14,7 @@ import { LoggingModule } from '@/core/logging/logging.module';
  */
 import { AuthModule } from '@/modules/auth/auth.module';
 import { ChallengesModule } from '@/modules/challenges/challenges.module';
+import { RbacModule } from '@/modules/rbac/rbac.module';
 import { UsersModule } from '@/modules/users/users.module';
 
 @Module({
@@ -30,6 +31,7 @@ import { UsersModule } from '@/modules/users/users.module';
      * Application modules
      */
     ChallengesModule,
+    RbacModule,
     UsersModule,
     AuthModule,
   ],

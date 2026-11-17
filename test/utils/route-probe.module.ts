@@ -42,6 +42,12 @@ class RouteProbeController {
     return ran('protected');
   }
 
+  @Post('protected')
+  @RequirePermission('probe', 'write')
+  protectedWrite() {
+    return ran('protected-write');
+  }
+
   @Get('receipt')
   @Receipt('Probe-Receipt')
   receiptOnly() {

@@ -14,8 +14,8 @@ The order the assignment is being built in, and why. Update the status column as
 | C7. Email challenge engine | 1c | 1.0, 1.2, 1.5, 1.6 | ✅ done |
 | C8. Registration | 1c | 1.0 | ✅ done |
 | C9. Authentication | 1c | 1.2 | ✅ done |
-| C10. RBAC | 1c | 1.1 | ⏭ next |
-| C11. Authorization chain | 1c | 1.3 | pending |
+| C10. RBAC | 1c | 1.1 | ✅ done |
+| C11. Authorization chain | 1c | 1.3 | ⏭ next |
 | C12. View and list | 2 | 1.4, 1.7 | pending |
 | C13. Update | 2 | 1.5 | pending |
 | C14. Delete | 2 | 1.6 | pending |
@@ -151,7 +151,7 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
    - stateless HS256 access and refresh JWTs with separate secrets, `token_use`, 30 s tolerance and cookies
    - refresh, logout
    - the access guard (`401 invalid_session`, or `503` when the DB is down)
-4. **RBAC** (spec 1.1):
+4. ✅ **RBAC** (spec 1.1; C10, D45–D46; the chain now runs access → CSRF → IP limits → RBAC):
    - the bootstrap
    - a snapshot plus version check before each request, with an atomic reload
    - the admin CRUD for roles, permissions, grants and user roles
