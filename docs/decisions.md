@@ -173,3 +173,40 @@ From the `/code-review` of C2–C6:
   - An unknown email and a non-pending user both answer `400 invalid_challenge`.
 - **Rate limits:** `registration_ip` on register and `registration_resend_ip` on resend (D30). Confirm has none: an OTP allows 5 tries per mail, and a magic token is 32 random bytes.
 - **No role yet.** Spec 1.0: while RBAC isn't there, activation assigns no role; the RBAC bootstrap (C10) gives existing active users `user`, and from then on activation assigns it in the same transaction.
+
+## D42: Tokens and cookies: HS256 on `node:crypto`, an explicit cross-site flag (2026-11-17)
+- **No JWT library.** HS256 is one HMAC-SHA256 over `header.payload`, so `src/modules/auth/tokens/jwt.ts` does it with `node:crypto` in about 100 lines:
+  - It signs and accepts exactly one header, `{"alg":"HS256","typ":"JWT"}`. Anything else (`none`, other algorithms, `kid`, `crit`) is `malformed`, so there is no algorithm negotiation to attack.
+  - It compares the signature text in constant time, before the payload is parsed. Comparing text rather than decoded bytes also refuses non-canonical encodings.
+  - Claims are checked exactly: `sub` must be a uuid, `iss` and `aud` must equal the configured values (no audience arrays), `iat` and `exp` must be integers with `exp > iat`, and `iat` may be at most 30 s in the future. A token counts as expired 30 s after `exp`.
+  - The failure categories are the spec's own (`missing`, `malformed`, `signature`, `expired`, `claims`, `token_use`). With a library they would be mapped from its error types.
+  - Why not a library: `jose` 6 is ESM-only, which Jest's CommonJS setup can't load (the same trap as `@fastify/static`, see `configure-app.ts`), and `jsonwebtoken` pulls in `jws` and several `lodash.*` packages to do the same HMAC. The code is covered by `jwt.spec.ts`, including tokens built independently of it, so it interoperates.
+- **Access and refresh keep separate keys** (spec), so a refresh token sent as an access token fails on its signature before `token_use` is read. `token_use` is still checked.
+- **`COOKIE_SAME_SITE=strict|none`** (default `strict`). Spec 1.2 wants `SameSite=None; Secure` when the frontend is on another site. "Another site" needs the registrable domain, which needs a public-suffix list (`github.io` is a suffix, for example). The operator knows this, so it is a flag. `none` is refused at boot unless `COOKIE_SECURE=true`, because browsers drop a `SameSite=None` cookie that isn't `Secure`. Chosen by the author on 2026-11-17.
+- **Logout** sends both cookies empty, with `Max-Age=0`, `Expires` set to 1970, and the same `Path`, `HttpOnly`, `Secure` and `SameSite` they were set with, so the browser matches and drops exactly those cookies.
+- **The refresh cookie is read from `Cookie` only.** A body, query or `Authorization` header is ignored (spec 1.2 §1.3.4); the route reads no body at all.
+
+## D43: Login flow choices (2026-11-17, amends D25)
+- **The failure limit (`login_failures`, 5 per email and IP per 15 min) counts every 401:** unknown email, wrong password and non-active status. Counting only known users would let the 429 reveal which emails exist. A slot is consumed before the argon2 check and released on success (D32), so a correct password doesn't use up the budget. When the limit is reached, even the right password gets `429` (the spec checks the limit before the expensive hash).
+- **One verify per attempt:** an unknown email, and a `deleted` user (no hash), are checked against a dummy hash made at startup with the real parameters, so timing doesn't tell them apart.
+- **The email step locks the user again** and re-checks `active` before issuing. The engine's `issue()` applies the 60 s cooldown to the outstanding challenge under that lock and replaces it after the cooldown. Only an outstanding challenge counts (no `cooldownFromLatest`, unlike registration): spec 1.2 says "previous incomplete challenge".
+- **Confirm signs both tokens inside the transaction, before the claim.** If signing fails, the transaction rolls back and the same code can be tried again (spec 1.2 §1.3.2).
+- **A user who stopped being `active` gets `401 invalid_credentials`** on confirm (spec 1.2 §1.3.2 step 4) and, by the same rule, on resend, where the spec is silent. Either way the challenge is consumed as `user_inactive`, so a later try gets `400`. Chosen by the author on 2026-11-17.
+- **Confirm and resend have no IP rate limit** of their own, as in registration (D41): an OTP allows 5 tries per mail, and the mails themselves are limited by the 60 s cooldown and by the login limits.
+- **The access check runs now (amends D25).** On a protected route the guard authenticates first: no cookie or a bad one gives `401 invalid_session`, and a user who can't be read gives `503 authorization_unavailable`. Then it still fails closed with 503 until C11 adds CSRF, user limits and RBAC. The verified id is put on `request.authUserId` for the chain. Chosen by the author on 2026-11-17.
+- **pg `connectionTimeoutMillis` is 5 s,** so an unreachable database (dropped packets rather than a refused connection) gives a prompt 503 instead of waiting for the OS timeout. Closes the gap noted in C2.
+
+## D44: C9 review fixes (2026-11-17, amends D43)
+`/code-review medium main...HEAD` raised nine findings. `/security-review` found nothing at the reporting bar.
+
+**Fixed:**
+- **Only a decided 401 keeps the `login_failures` slot.** Before, the slot was given back only on success. So a database error, a timeout, or a cooldown `429` after a correct password still counted as a failed check, and could lock a real user out for 15 minutes during a database blip. Now any other outcome gives the slot back. A late `401` (the user was blocked between the password check and the lock) keeps it, as D43 says.
+- **The access check answers 503 only for an outage.** It uses `classifyDbError(...).kind === 'unavailable'`. Any other error reaches the filter as a `500`, so a bug doesn't look like the database being down.
+- **A deleted user (no hash) is logged as `user_inactive`,** not `wrong_password`.
+- **A refusal by the failure limit is logged with the email pseudonym,** so attacks on one address can be matched (spec 1.2 §1.5).
+
+**Not changed, and why:**
+- **Core's guard imports `AccessAuthenticator` from the auth module.** C11 rebuilds the whole chain (access → CSRF → limits → RBAC) and decides where its pieces live. Moving the authenticator now would move it twice. `route-access.ts` already imports from `modules/rbac`.
+- **Refresh and the access check each have their own "token → active user" code.** Spec 1.2 gives them different answers when the database is down (`503 authorization_unavailable` in the chain, a plain `503` on refresh), so a shared helper would need a flag. The shared part is three lines.
+- **`LoginConfirmDto` copies `RegistrationConfirmDto`.** The two token formats already differ (registration's token has no id, D41), and email change and deletion will add their own fields. A shared DTO waits until C13 shows what is actually common.
+- **`ACCESS_COOKIE` lives in `configure-app.ts`** because Swagger's cookie scheme there needs it. Moving it is cosmetic and can happen in C11 with the chain.

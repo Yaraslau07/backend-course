@@ -20,6 +20,8 @@ export interface AppConfig {
   FRONTEND_URL: string;
   CORS_ORIGINS: string[];
   COOKIE_SECURE: boolean;
+  /** `none` only for a frontend on another site (spec 1.2 §1.3.3); needs COOKIE_SECURE. */
+  COOKIE_SAME_SITE: 'strict' | 'none';
   READINESS_ALLOWED_IPS: string[];
 
   /* PostgreSQL */

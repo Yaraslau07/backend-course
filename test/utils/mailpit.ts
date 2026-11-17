@@ -64,3 +64,24 @@ export async function hasMail(address: string): Promise<boolean> {
       .length > 0
   );
 }
+
+/** How many messages to `address` exist right now. */
+export async function countMail(address: string): Promise<number> {
+  const query = encodeURIComponent(`to:"${address}"`);
+  return (await getJson<SearchResult>(`/api/v1/search?query=${query}`)).messages
+    .length;
+}
+
+/** Waits until at least `count` messages to `address` exist, then returns the newest. */
+export async function waitForMailCount(
+  address: string,
+  count: number,
+  timeoutMs = 5000,
+): Promise<CaughtMail> {
+  const deadline = Date.now() + timeoutMs;
+  while ((await countMail(address)) < count) {
+    if (Date.now() > deadline) throw new Error('No mail arrived in time');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return waitForMail(address, timeoutMs);
+}

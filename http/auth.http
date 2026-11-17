@@ -53,3 +53,61 @@ Content-Type: application/json
   "email": "weak@example.com",
   "password": "short"
 }
+
+# ---------------------------------------------------------------------------
+# Login and sessions (spec 1.2). The HTTP client keeps the cookies between requests.
+# With LOGIN_EMAIL_CONFIRMATION_ENABLED=false login answers 204 with both cookies.
+# Otherwise it answers 202 with an attemptId; take the code (or #token=…) from Mailpit.
+
+### Login: 204 + cookies, or 202 (confirmation required)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "someone+1@example.com",
+  "password": "correct horse 1"
+}
+
+### Login with a wrong password: 401 invalid_credentials (the same for an unknown email or a blocked user)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "someone+1@example.com",
+  "password": "wrong horse 2"
+}
+
+### Confirm the login with the OTP from the email: 204 + cookies
+POST {{baseUrl}}/auth/login/confirm
+Content-Type: application/json
+
+{
+  "attemptId": "<attemptId from the 202>",
+  "code": "<6 digits from the email>"
+}
+
+### Confirm with a magic link (LOGIN_EMAIL_CONFIRMATION_METHOD=magic_link): the token is attemptId.secret
+POST {{baseUrl}}/auth/login/confirm
+Content-Type: application/json
+
+{
+  "token": "<the value after #token= in the link>"
+}
+
+### Resend the code or link: 429 within 60 s of the last one, then 202 (same attemptId)
+POST {{baseUrl}}/auth/login/resend
+Content-Type: application/json
+
+{
+  "attemptId": "<attemptId from the 202>"
+}
+
+### Refresh: 204 with a new pair, from the refresh cookie only; 401 invalid_session without it
+POST {{baseUrl}}/auth/refresh
+
+### Logout: always 204, clears both cookies
+POST {{baseUrl}}/auth/logout
+
+### Logout from an untrusted origin: 403 csrf_rejected
+POST {{baseUrl}}/auth/logout
+Origin: https://evil.example

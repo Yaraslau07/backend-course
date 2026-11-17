@@ -119,6 +119,34 @@ describe('validate()', () => {
     ).toBe(false);
   });
 
+  describe('COOKIE_SAME_SITE (spec 1.2 §1.3.3, D42)', () => {
+    it('defaults to strict', () => {
+      expect(validate(validEnv()).COOKIE_SAME_SITE).toBe('strict');
+    });
+
+    it('accepts none for a cross-site frontend, with Secure cookies', () => {
+      expect(
+        validate({ ...validEnv(), COOKIE_SAME_SITE: 'none' }).COOKIE_SAME_SITE,
+      ).toBe('none');
+    });
+
+    it('refuses none without Secure cookies (browsers drop SameSite=None without Secure)', () => {
+      expect(() =>
+        validate({
+          ...validEnv(),
+          COOKIE_SAME_SITE: 'none',
+          COOKIE_SECURE: 'false',
+        }),
+      ).toThrow(/COOKIE_SAME_SITE=none requires COOKIE_SECURE=true/);
+    });
+
+    it.each(['lax', 'Strict', ''])('refuses %p', (value) => {
+      expect(() =>
+        validate({ ...validEnv(), COOKIE_SAME_SITE: value }),
+      ).toThrow(/COOKIE_SAME_SITE/);
+    });
+  });
+
   it('treats an empty bootstrap admin id as absent and rejects a non-uuid', () => {
     expect(
       validate({ ...validEnv(), RBAC_BOOTSTRAP_ADMIN_USER_ID: '' })
