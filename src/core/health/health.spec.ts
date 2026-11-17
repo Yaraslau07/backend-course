@@ -139,6 +139,30 @@ describe('BuiltinReadinessChecks', () => {
       down: 'cursor_active_kid',
     });
   });
+
+  it('fails readiness for duplicate cursor kids or shared key material', () => {
+    const shared = key();
+    expect(
+      build(
+        {},
+        fakeConfig({
+          USER_LIST_CURSOR_HMAC_KEYS: [
+            { kid: 'k1', key: key() },
+            { kid: 'k1', key: key() },
+          ],
+        }),
+      ).checks.keys(),
+    ).toEqual({ down: 'cursor_duplicate_kid' });
+    expect(
+      build(
+        {},
+        fakeConfig({
+          JWT_ACCESS_SECRET: shared,
+          USER_LIST_CURSOR_HMAC_KEYS: [{ kid: 'k1', key: shared }],
+        }),
+      ).checks.keys(),
+    ).toEqual({ down: 'duplicate_key' });
+  });
 });
 
 describe('HealthController', () => {

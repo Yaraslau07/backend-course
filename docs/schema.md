@@ -29,6 +29,19 @@ Conventions:
 
 Lowercasing, NFC and control-character rules are applied by the application, not checked here: the database's notion of "lowercase" depends on collation and could disagree with the app's.
 
+C12 adds the following indexes for spec 1.7. Both ascending and descending traversals use the same B-tree in opposite directions; there is no OFFSET or count query.
+
+| Index | Purpose |
+|---|---|
+| `idx_users_created_at_id` | keyset order `(created_at, id)` |
+| `idx_users_id_created_at` | keyset order `(id, created_at)` |
+| `idx_users_status_created_at_id` | status-filtered creation order |
+| `idx_users_status_id_created_at` | status-filtered id order |
+| `idx_users_email_prefix` | literal email prefix, `text_pattern_ops` |
+| `idx_users_display_name_prefix` | literal prefix on `lower(normalize(display_name, NFC))`, `text_pattern_ops` |
+
+The expression and opclass indexes have `synchronize: false` index declarations because TypeORM cannot represent their definitions. The migration owns their SQL. The other four are fully described by entity metadata and checked for drift.
+
 ## Email challenges
 
 Four tables with the same columns: `registration_challenges`, `login_challenges`, `email_change_challenges`, `deletion_challenges` (D13).

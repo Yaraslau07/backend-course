@@ -10,6 +10,7 @@ import {
   type StorageRead,
 } from '@/modules/storage/object-storage';
 import type { SafeProfile } from '@/modules/users/safe-profile';
+import { UsersReadService } from '@/modules/users/users-read.service';
 import { USER_STATUSES } from '@/modules/users/users.types';
 
 import { createUser, ip, setStatus } from './utils/auth';
@@ -86,6 +87,7 @@ describe('profiles and photos (spec 1.4)', () => {
     expect((await get(`/users/${randomUUID()}`, actor)).statusCode).toBe(403);
     expect((await get('/users/invalid.id', actor)).statusCode).toBe(403);
     expect((await get('/users/invalid.id', reader)).statusCode).toBe(400);
+    expect((await get('/users/valid%0A', reader)).statusCode).toBe(400);
   });
 
   it('returns exactly the canonical profile and treats an uppercase own UUID as self', async () => {
@@ -104,7 +106,6 @@ describe('profiles and photos (spec 1.4)', () => {
 
   it('checks read_any before looking up an existing, missing or non-UUID target', async () => {
     const target = await fixture();
-    logs.clear();
     for (const id of [target.id, randomUUID(), 'valid-but-absent']) {
       const res = await get(`/users/${id}`, reader);
       expect(res.statusCode).toBe(403);
@@ -169,6 +170,22 @@ describe('profiles and photos (spec 1.4)', () => {
       expect(res.body).not.toContain('private-missing-key');
     },
   );
+
+  it('returns a safe 503 if the storage stream fails before sending bytes', async () => {
+    const target = await fixture('active', { photo: 'private-stream-key' });
+    jest.spyOn(app.get(ObjectStorage), 'read').mockResolvedValue({
+      kind: 'found',
+      stream: new Readable({
+        read() {
+          this.destroy(new Error('private-stream-key transport detail'));
+        },
+      }),
+    });
+    const res = await get(`/users/${target.id}/photo`, admin);
+    expect(res.statusCode).toBe(503);
+    expect(res.json<{ code: string }>().code).toBe('service_unavailable');
+    expect(res.body).not.toContain('private-stream-key');
+  });
 
   it('does not access storage for missing, unset, deleting or deleted photos', async () => {
     const read = jest.spyOn(app.get(ObjectStorage), 'read');
@@ -255,6 +272,7 @@ describe('admin user listing (spec 1.7)', () => {
     'unknown=x',
     'limit=0',
     'limit=101',
+    'limit=20%0A',
     'limit=1&limit=2',
     'status=bad',
     'sort=email',
@@ -278,6 +296,7 @@ describe('admin user listing (spec 1.7)', () => {
     'walks tied timestamps in both directions with %s and excludes later inserts',
     async (sort) => {
       const prefix = `pages-${randomUUID()}`;
+      secrets.push(prefix);
       const users = await Promise.all(
         Array.from({ length: 5 }, (_, n) =>
           fixture('active', { email: `${prefix}-${n}@example.com` }),
@@ -300,6 +319,17 @@ describe('admin user listing (spec 1.7)', () => {
         const late = await fixture('active', {
           email: `${prefix}-late-${order}@example.com`,
         });
+        const boundary = await fixture('active', {
+          email: `${prefix}-boundary-${order}@example.com`,
+        });
+        const firstCursor = res.json<{ nextCursor: string }>().nextCursor;
+        const { snapshotAt } = JSON.parse(
+          Buffer.from(firstCursor.split('.')[0], 'base64url').toString(),
+        ) as { snapshotAt: string };
+        await db.query(`UPDATE users SET created_at = $2 WHERE id = $1`, [
+          boundary.id,
+          snapshotAt,
+        ]);
         // Its immutable creation time is at/after the first request's snapshot.
         await db.query(
           `UPDATE users SET created_at = clock_timestamp() WHERE id = $1`,
@@ -313,6 +343,7 @@ describe('admin user listing (spec 1.7)', () => {
           }>();
           received.push(...body.items.map((u) => u.id));
           if (!body.nextCursor) break;
+          secrets.push(body.nextCursor);
           res = await list({ ...params, cursor: body.nextCursor });
         }
         const expected = users.map((u) => u.id).sort();
@@ -323,6 +354,10 @@ describe('admin user listing (spec 1.7)', () => {
             late.id,
             `excluded-${randomUUID()}@example.com`,
           ]);
+          await db.query(`UPDATE users SET email = $2 WHERE id = $1`, [
+            boundary.id,
+            `excluded-${randomUUID()}@example.com`,
+          ]);
         } else expect(received).toEqual(expected.reverse());
       }
     },
@@ -330,9 +365,10 @@ describe('admin user listing (spec 1.7)', () => {
 
   it('supports exact ID, literal email/name prefix and all status filters', async () => {
     const prefix = `literal_${randomUUID()}`;
+    secrets.push(prefix, `Éva_%${prefix}`, `ÉVA_%${prefix}`);
     const target = await fixture('active', {
       email: `${prefix}@example.com`,
-      name: 'Éva_%PrivateName',
+      name: `Éva_%${prefix}`,
     });
     await fixture('active', {
       email: `${prefix.replace('_', 'x')}@example.com`,
@@ -341,7 +377,7 @@ describe('admin user listing (spec 1.7)', () => {
     for (const params of [
       { searchBy: 'id', q: target.id },
       { searchBy: 'email', q: `  ${prefix.toUpperCase()}  ` },
-      { searchBy: 'displayName', q: '  E\u0301VA_%  ' },
+      { searchBy: 'displayName', q: `  E\u0301VA_%${prefix}  ` },
     ]) {
       const res = await list(params);
       expect(res.statusCode).toBe(200);
@@ -396,5 +432,28 @@ describe('admin user listing (spec 1.7)', () => {
     expect((await get('/admin/users', actors[0], address)).statusCode).toBe(
       429,
     );
+  });
+
+  it('returns 503 on a real two-second SQL timeout and recovers on the next request', async () => {
+    const lock = db.createQueryRunner();
+    await lock.connect();
+    await lock.startTransaction();
+    const service = app.get<UsersReadService>(UsersReadService);
+    const original = service.list.bind(service) as UsersReadService['list'];
+    jest.spyOn(service, 'list').mockImplementationOnce(async (actor, query) => {
+      // Acquire after the request's identity/RBAC reads, so only the bounded list query waits.
+      await lock.query('LOCK TABLE users IN ACCESS EXCLUSIVE MODE');
+      return original(actor, query);
+    });
+    try {
+      const res = await list();
+      expect(res.statusCode).toBe(503);
+      expect(res.json<{ code: string }>().code).toBe('service_unavailable');
+      expect(res.body).not.toContain('items');
+    } finally {
+      await lock.rollbackTransaction();
+      await lock.release();
+    }
+    expect((await list()).statusCode).toBe(200);
   });
 });

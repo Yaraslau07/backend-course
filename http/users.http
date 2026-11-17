@@ -1,0 +1,54 @@
+# User reads (specs 1.4 and 1.7). Sign in with http/auth.http first; the client keeps cookies.
+# Copy your immutable id from registration into userId. Listing requires users@list;
+# foreign profiles/photos require users@read plus users@read_any (admin has both).
+@userId = <your-user-id>
+@otherUserId = <another-user-id>
+
+### Own canonical profile: 200, exactly seven fields
+GET {{baseUrl}}/users/{{userId}}
+
+### The same own UUID in uppercase still counts as self (D51)
+# Paste the uppercase UUID here.
+GET {{baseUrl}}/users/<UPPERCASE-UUID>
+
+### Foreign profile: 403 ownership_denied without read_any; otherwise 200 or 404
+GET {{baseUrl}}/users/{{otherUserId}}
+
+### Own protected photo: 404 until uploaded in C13
+# A stored photo returns image/webp, nosniff, Cache-Control: private, max-age=300.
+GET {{baseUrl}}/users/{{userId}}/photo
+
+### An allowed but absent non-UUID id: 404 for admin, 403 without read_any
+GET {{baseUrl}}/users/valid-but-absent
+
+### Malformed id: 400 after the session and base-permission checks (D51)
+GET {{baseUrl}}/users/invalid.id
+
+### First page: at most 20, newest first; no totalCount
+GET {{baseUrl}}/admin/users
+
+### Small page; save the cursor to continue with the same query
+GET {{baseUrl}}/admin/users?limit=2&sort=createdAt&order=desc
+
+> {% client.global.set("usersCursor", response.body.nextCursor || ""); %}
+
+### Next page: original snapshot and expiry are retained
+GET {{baseUrl}}/admin/users?limit=2&sort=createdAt&order=desc&cursor={{usersCursor}}
+
+### Exact id search
+GET {{baseUrl}}/admin/users?searchBy=id&q={{userId}}
+
+### Normalized email prefix plus status filter
+GET {{baseUrl}}/admin/users?searchBy=email&q=someone&status=active&sort=id&order=asc
+
+### Literal name prefix (percent and underscore are not SQL wildcards)
+GET {{baseUrl}}/admin/users?searchBy=displayName&q=Eva_%25
+
+### Changed parameters on a cursor: 400 invalid_cursor
+GET {{baseUrl}}/admin/users?limit=3&sort=createdAt&order=desc&cursor={{usersCursor}}
+
+### Unknown and repeated parameters: 400 (after users@list)
+GET {{baseUrl}}/admin/users?limit=1&limit=2
+
+### Corrupt cursor: 400 invalid_cursor
+GET {{baseUrl}}/admin/users?cursor=invalid.cursor

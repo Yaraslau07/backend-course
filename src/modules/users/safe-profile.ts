@@ -21,7 +21,16 @@ export interface SafeProfile {
 }
 
 export function safeProfile(row: ProfileRow, baseUrl: string): SafeProfile {
-  void row;
-  void baseUrl;
-  throw new Error('not implemented');
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.display_name,
+    photoUrl:
+      row.photo_key && row.status !== 'deleting' && row.status !== 'deleted'
+        ? `${baseUrl.replace(/\/+$/, '')}/users/${encodeURIComponent(row.id)}/photo`
+        : null,
+    status: row.status,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  };
 }

@@ -53,6 +53,7 @@ access cookie → current user is `active` → CSRF (cross-origin writes) → IP
 - A receipt route with the header present runs the handler, which checks the receipt; the cookie is not read. Without the header it follows the pair's chain, or answers `401 invalid_session` if it has no pair (D26).
 - CSRF (D27, D28): a write (`POST`, `PUT`, `PATCH`, `DELETE`) with an `Origin` other than the API's own needs that exact origin in `CORS_ORIGINS` and `X-CSRF-Protection: 1`, else `403 csrf_rejected`. No `Origin` passes (not a browser) unless `Sec-Fetch-Site` is `cross-site` or `same-site`. Public writes are checked in the route guard; protected ones after the active-user step.
 - The permission check comes **before** looking up the target. Without the right you get `403`, never `404`.
+- C12 follows the author's clarification (D51): the shared guard runs before profile-ID validation, and UUID case does not change ownership. The profile ID accepts 1–128 ASCII letters, digits, `_` and `-`; a valid non-UUID is an absent target, not a database cast error. User-list query validation follows `users@list`.
 - Roles in a JWT, body, query or header are ignored. RBAC reads the current snapshot; if the snapshot version is stale or it is unavailable, return `503 authorization_unavailable`.
 
 ## Error codes catalogue

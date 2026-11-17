@@ -66,6 +66,7 @@ describe('list query whitelist and normalization', () => {
     { limit: '101' },
     { limit: '1.5' },
     { limit: '1e1' },
+    { limit: '20\n' },
     { limit: '' },
     { sort: 'email' },
     { order: 'DESC' },
@@ -117,7 +118,15 @@ describe('list query whitelist and normalization', () => {
 
   it('accepts the full ID contract without requiring a UUID', () => {
     expect(validateUserId('user_ID-123')).toBe('user_ID-123');
-    for (const id of ['', 'with space', 'a/b', 'é', 'a'.repeat(129)]) {
+    for (const id of [
+      '',
+      'with space',
+      'a/b',
+      'é',
+      'abc\n',
+      'abc\r',
+      'a'.repeat(129),
+    ]) {
       expect(() => validateUserId(id)).toThrow();
     }
   });
