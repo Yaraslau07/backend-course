@@ -29,6 +29,10 @@ export const REDACT_PATHS = [
   '*.code',
   '*.secret',
   '*.email',
+  '*.accessKeyId',
+  '*.secretAccessKey',
+  '*.S3_ACCESS_KEY_ID',
+  '*.S3_SECRET_ACCESS_KEY',
 ];
 
 /** The pattern of the matched route (`/users/:userId`), put on the raw request in configureApp. */

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 
 import { ConfigService } from '@/core/config/config.service';
 import { AppException } from '@/core/errors/app.exception';
@@ -61,8 +61,9 @@ export class RateLimiter {
   async consume(
     policy: RateLimitPolicyName,
     parts: string[],
+    manager: Pick<EntityManager, 'query'> = this.db,
   ): Promise<RateLimitResult> {
-    const rows = await this.db.query<Row[]>(
+    const rows = await manager.query<Row[]>(
       `INSERT INTO rate_limits AS r (bucket, key, hits, last_allowed, expires_at)
        VALUES ($1, $2, ARRAY[now()], true, now() + make_interval(secs => $4))
        ON CONFLICT (bucket, key) DO UPDATE SET (last_allowed, hits, expires_at) = (
@@ -74,7 +75,10 @@ export class RateLimiter {
            FROM (SELECT ${LIVE_HITS} AS live) AS current
        )
        RETURNING last_allowed AS allowed,
-                 CASE WHEN last_allowed THEN 0 ELSE ${RETRY_AFTER} END AS retry_after`,
+                 CASE WHEN last_allowed THEN 0 ELSE ${RETRY_AFTER} END AS retry_after`.replaceAll(
+        'now()',
+        manager === this.db ? 'now()' : 'statement_timestamp()',
+      ),
       this.params(policy, parts),
     );
     return this.result(rows[0]);

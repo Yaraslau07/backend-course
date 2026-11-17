@@ -66,8 +66,17 @@ export interface AppConfig {
   RBAC_BOOTSTRAP_ADMIN_USER_ID?: string;
   DELETION_WORKER_LEASE_SECONDS: number;
 
-  /** Single-instance development storage; production gets an S3 adapter in C13. */
+  /** Single-instance development/test storage; production uses S3. */
   STORAGE_LOCAL_ROOT: string;
+  STORAGE_DRIVER: 'local' | 's3';
+  STORAGE_WORKERS_ENABLED: boolean;
+  S3_REGION?: string;
+  S3_BUCKET?: string;
+  S3_PREFIX: string;
+  S3_ENDPOINT?: string;
+  S3_FORCE_PATH_STYLE: boolean;
+  S3_ACCESS_KEY_ID?: string;
+  S3_SECRET_ACCESS_KEY?: string;
 
   /* SMTP */
   SMTP_HOST: string;

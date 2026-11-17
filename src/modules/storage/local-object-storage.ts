@@ -1,20 +1,21 @@
 import { constants } from 'node:fs';
-import { lstat, open, unlink } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
-
 import { Injectable } from '@nestjs/common';
-
 import { ConfigService } from '@/core/config/config.service';
+import {
+  ObjectStorage,
+  type StorageRead,
+  type StorageListing,
+  validStorageKey,
+} from './object-storage';
 
-import { ObjectStorage, type StorageRead } from './object-storage';
-
-/** Flat opaque keys, no public directory. Local storage is deliberately disabled in production. */
+/** Flat opaque keys, private regular files, and no filesystem storage in production. */
 @Injectable()
 export class LocalObjectStorage extends ObjectStorage {
   constructor(private readonly config: ConfigService) {
     super();
   }
-
   async read(key: string): Promise<StorageRead> {
     const path = this.path(key);
     if (!path) return { kind: 'unavailable' };
@@ -37,7 +38,6 @@ export class LocalObjectStorage extends ObjectStorage {
       return { kind: this.missing(error) ? 'not_found' : 'unavailable' };
     }
   }
-
   async delete(key: string): Promise<'deleted' | 'not_found' | 'unavailable'> {
     const path = this.path(key);
     if (!path) return 'unavailable';
@@ -49,19 +49,73 @@ export class LocalObjectStorage extends ObjectStorage {
       return this.missing(error) ? 'not_found' : 'unavailable';
     }
   }
-
-  private path(key: string): string | null {
-    const name = key.endsWith('.webp') ? key.slice(0, -5) : key;
-    if (
-      this.config.get('NODE_ENV') === 'production' ||
-      name.length < 1 ||
-      name.length > 128 ||
-      /[^A-Za-z0-9_-]/.test(name)
-    )
-      return null;
-    return resolve(this.config.get('STORAGE_LOCAL_ROOT'), key);
+  async write(key: string, bytes: Buffer): Promise<'stored' | 'unavailable'> {
+    const path = this.path(key);
+    if (!path) return 'unavailable';
+    try {
+      await mkdir(resolve(this.config.get('STORAGE_LOCAL_ROOT')), {
+        recursive: true,
+      });
+      const file = await open(
+        path,
+        constants.O_WRONLY |
+          constants.O_CREAT |
+          constants.O_EXCL |
+          constants.O_NOFOLLOW,
+        0o600,
+      );
+      try {
+        await file.writeFile(bytes);
+      } catch (error) {
+        await unlink(path).catch(() => undefined);
+        throw error;
+      } finally {
+        await file.close();
+      }
+      return 'stored';
+    } catch {
+      return 'unavailable';
+    }
   }
-
+  async list(cursor?: string): Promise<StorageListing> {
+    if (this.config.get('NODE_ENV') === 'production')
+      return { kind: 'unavailable' };
+    try {
+      const directory = resolve(this.config.get('STORAGE_LOCAL_ROOT'));
+      const entries = (await readdir(directory, { withFileTypes: true }))
+        .filter(
+          (e) =>
+            e.isFile() &&
+            validStorageKey(e.name) &&
+            (!cursor || e.name > cursor),
+        )
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+      const objects: { key: string; modifiedAt: Date }[] = [];
+      for (const entry of entries.slice(0, 100)) {
+        try {
+          const stat = await lstat(resolve(directory, entry.name));
+          if (stat.isFile())
+            objects.push({ key: entry.name, modifiedAt: stat.mtime });
+        } catch (error) {
+          if (!this.missing(error)) throw error;
+        }
+      }
+      return {
+        kind: 'listed',
+        objects,
+        ...(entries.length > 100 ? { cursor: entries[99].name } : {}),
+      };
+    } catch (error) {
+      return this.missing(error)
+        ? { kind: 'listed', objects: [] }
+        : { kind: 'unavailable' };
+    }
+  }
+  private path(key: string): string | null {
+    return this.config.get('NODE_ENV') === 'production' || !validStorageKey(key)
+      ? null
+      : resolve(this.config.get('STORAGE_LOCAL_ROOT'), key);
+  }
   private missing(error: unknown): boolean {
     return (
       typeof error === 'object' &&

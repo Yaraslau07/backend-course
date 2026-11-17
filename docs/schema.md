@@ -42,6 +42,8 @@ C12 adds the following indexes for spec 1.7. Both ascending and descending trave
 
 The expression and opclass indexes have `synchronize: false` index declarations because TypeORM cannot represent their definitions. The migration owns their SQL. The other four are fully described by entity metadata and checked for drift.
 
+C13 adds `idx_users_photo_key` for cleanup/reference checks. It does not add a new job table: photo replacement/clearing writes the existing `storage_cleanup_jobs` row in the same transaction as dropping the reference. Workers hold a `FOR UPDATE SKIP LOCKED` job lock through bounded storage deletion, then commit success or a one-minute retry; the fifth unsuccessful attempt becomes `failed` with `next_attempt_at = NULL`.
+
 ## Email challenges
 
 Four tables with the same columns: `registration_challenges`, `login_challenges`, `email_change_challenges`, `deletion_challenges` (D13).

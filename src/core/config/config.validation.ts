@@ -213,6 +213,32 @@ export const configSchema = Joi.object<AppConfig>({
 
   /* SMTP */
   STORAGE_LOCAL_ROOT: Joi.string().min(1).default('.storage'),
+  STORAGE_WORKERS_ENABLED: Joi.boolean().default(true),
+  STORAGE_DRIVER: Joi.string()
+    .valid('local', 's3')
+    .default(
+      Joi.ref('NODE_ENV', {
+        adjust: (env: string) => (env === 'production' ? 's3' : 'local'),
+      }),
+    ),
+  S3_REGION: Joi.string()
+    .pattern(/^[a-z0-9-]+$/)
+    .empty('')
+    .optional(),
+  S3_BUCKET: Joi.string()
+    .pattern(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/)
+    .empty('')
+    .optional(),
+  S3_PREFIX: Joi.string()
+    .pattern(/^[A-Za-z0-9_-]+\/$/)
+    .default('photos/'),
+  S3_ENDPOINT: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .empty('')
+    .optional(),
+  S3_FORCE_PATH_STYLE: Joi.boolean().default(false),
+  S3_ACCESS_KEY_ID: Joi.string().empty('').optional(),
+  S3_SECRET_ACCESS_KEY: Joi.string().empty('').optional(),
   SMTP_HOST: Joi.string().hostname().required(),
   SMTP_PORT: Joi.number().port().required(),
   SMTP_SECURE: Joi.boolean().default(false),
@@ -249,6 +275,16 @@ export function assertDistinctKeys(config: AppConfig): void {
 /** Rules that span several variables. */
 export function assertCrossFieldRules(config: AppConfig): void {
   const errors: string[] = [];
+  if (config.STORAGE_DRIVER === 's3') {
+    for (const name of [
+      'S3_REGION',
+      'S3_BUCKET',
+      'S3_ACCESS_KEY_ID',
+      'S3_SECRET_ACCESS_KEY',
+    ] as const) {
+      if (!config[name]) errors.push(`${name} is required for S3 storage`);
+    }
+  }
 
   if (
     !config.USER_LIST_CURSOR_HMAC_KEYS.some(
@@ -266,6 +302,8 @@ export function assertCrossFieldRules(config: AppConfig): void {
   }
 
   if (config.NODE_ENV === 'production') {
+    if (config.STORAGE_DRIVER !== 's3')
+      errors.push('STORAGE_DRIVER must be s3 in production');
     if (!config.COOKIE_SECURE)
       errors.push('COOKIE_SECURE must be true in production');
     if (!config.PUBLIC_API_BASE_URL.startsWith('https://')) {

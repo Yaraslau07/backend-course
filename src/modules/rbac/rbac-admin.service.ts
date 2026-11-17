@@ -9,7 +9,8 @@ import { classifyDbError } from '@/core/errors/db-errors';
 import type { GrantDto } from './dto/grant.dto';
 import type { PermissionDto } from './dto/permission.dto';
 import type { RoleDto } from './dto/role.dto';
-import { DEFAULT_ROLE, RBAC_MANAGE } from './rbac.types';
+import { DEFAULT_ROLE } from './rbac.types';
+import { assertRbacManagerRemains } from './rbac-invariant';
 
 export interface RoleView {
   id: string;
@@ -81,18 +82,6 @@ const GRANT_SELECT = `
  * "Is there still an active user who may do rbac@manage?", on the state the transaction is about to
  * commit. An all-actions grant counts only while the permission still has `manage`.
  */
-const HOLDER_REMAINS = `
-  SELECT EXISTS (
-    SELECT 1
-      FROM users u
-      JOIN user_roles ur ON ur.user_id = u.id
-      JOIN grants g ON g.role_id = ur.role_id
-      JOIN permissions p ON p.id = g.permission_id AND p.name = $1
-      JOIN permission_actions pa ON pa.permission_id = p.id AND pa.action = $2
-     WHERE u.status = 'active'
-       AND (g.all_actions OR EXISTS (
-             SELECT 1 FROM grant_actions ga WHERE ga.grant_id = g.id AND ga.action = $2))
-  ) AS ok`;
 
 const iso = (value: Date) => value.toISOString();
 
@@ -373,11 +362,7 @@ export class RbacAdminService {
           `SELECT id FROM rbac_policy_state WHERE id = 1 FOR UPDATE`,
         );
         const result = await work(manager);
-        const [{ ok }] = await manager.query<{ ok: boolean }[]>(
-          HOLDER_REMAINS,
-          [RBAC_MANAGE.permission, RBAC_MANAGE.action],
-        );
-        if (!ok) throw new AppException('last_rbac_manager');
+        await assertRbacManagerRemains(manager);
         const [[state]] = await manager.query<[{ version: string }[], number]>(
           `UPDATE rbac_policy_state SET version = version + 1, updated_at = now()
             WHERE id = 1 RETURNING version`,

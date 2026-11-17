@@ -17,6 +17,10 @@ const key = () => randomBytes(32).toString('base64url');
 
 const validEnv = (): Record<string, string> => ({
   NODE_ENV: 'development',
+  S3_REGION: 'eu-central-1',
+  S3_BUCKET: 'test-course-bucket',
+  S3_ACCESS_KEY_ID: 'test-access-key',
+  S3_SECRET_ACCESS_KEY: 'test-only-secret-not-for-production',
   PUBLIC_API_BASE_URL: 'http://localhost:3007',
   FRONTEND_URL: 'http://localhost:5173',
   CORS_ORIGINS: 'http://localhost:5173',

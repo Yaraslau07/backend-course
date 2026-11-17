@@ -21,6 +21,7 @@ import { USER_STATUSES, type UserStatus } from '../users.types';
  * so every write sets it explicitly with `now()`.
  */
 @Entity('users')
+@Index('idx_users_photo_key', ['photoKey'])
 @Index('idx_users_created_at_id', ['createdAt', 'id'])
 @Index('idx_users_id_created_at', ['id', 'createdAt'])
 @Index('idx_users_status_created_at_id', ['status', 'createdAt', 'id'])
