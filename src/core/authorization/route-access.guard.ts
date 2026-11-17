@@ -9,6 +9,7 @@ import type { FastifyRequest } from 'fastify';
 import { AppException } from '@/core/errors/app.exception';
 import { RateLimiter } from '@/core/rate-limit/rate-limiter.service';
 import { AccessAuthenticator } from '@/modules/auth/access-authenticator';
+import { RbacAuthorizer } from '@/modules/rbac/rbac-authorizer';
 
 import { CsrfPolicy } from './csrf';
 import { getRouteRateLimits } from '@/core/rate-limit/rate-limit.decorator';
@@ -29,6 +30,7 @@ export class RouteAccessGuard implements CanActivate {
     private readonly csrf: CsrfPolicy,
     private readonly limiter: RateLimiter,
     private readonly authenticator: AccessAuthenticator,
+    private readonly authorizer: RbacAuthorizer,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {

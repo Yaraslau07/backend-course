@@ -359,14 +359,14 @@ describe('Sessions (e2e)', () => {
       },
     );
 
-    it('lets an active user through authentication; the rest of the chain still fails closed (503 until C11)', async () => {
+    it('lets an active user through authentication to RBAC, which refuses a missing grant with 403', async () => {
       const { access } = await signIn();
       const before = calls.protected ?? 0;
 
       const res = await hit({ access_token: access });
 
-      expect(res.status).toBe(503);
-      expect(res.body.code).toBe('authorization_unavailable');
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('permission_denied');
       expect(calls.protected ?? 0).toBe(before);
     });
 

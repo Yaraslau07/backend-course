@@ -40,6 +40,8 @@ describe('Health and bootstrap (e2e)', () => {
         database: 'up',
         config: 'up',
         route_declarations: 'up',
+        // rbac: the policy snapshot is loaded (spec 1.1 §1.3.6).
+        rbac: 'up',
         smtp: 'up',
       },
     });
