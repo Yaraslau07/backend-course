@@ -55,7 +55,13 @@ export async function configureApp(
   const fastify = app.getHttpAdapter().getInstance();
   // Expose Fastify's id on the raw request for pino-http, and echo it to the client.
   fastify.addHook('onRequest', (request, _reply, done) => {
-    (request.raw as typeof request.raw & { id?: string }).id = request.id;
+    const raw = request.raw as typeof request.raw & {
+      id?: string;
+      routePattern?: string;
+    };
+    raw.id = request.id;
+    // The matched route's pattern for the request log (D49); undefined for a 404.
+    raw.routePattern = request.routeOptions.url;
     done();
   });
   fastify.addHook('onSend', (request, reply, _payload, done) => {

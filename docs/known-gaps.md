@@ -10,8 +10,8 @@ A running list of what's still outstanding. Check it before assuming something i
 - No entity is registered with a Nest module yet (`TypeOrmModule.forFeature`); each feature does that when it first needs a repository.
 
 ## Phase 1 framework pieces (deliberately not in Phase 0)
-- **The protected chain is partial** (D46): access → CSRF → IP limits → RBAC run now. User-keyed rate limits and the resource/ownership step arrive with C11; until then a protected route that declares a user-keyed limit answers `503 authorization_unavailable`.
-- **Rate limits are in place, but partly unused yet:** each policy is applied by the checkpoint that adds its route (registration C8, login and refresh C9, …). User-keyed ones start working with the protected chain in C11.
+- **The client half of spec 1.3 §1.3.3** (one shared refresh after a `401`, a single retry, clearing state) belongs to a frontend this project doesn't have (D48). The server guarantees what it relies on: a guard `401` always comes before the handler.
+- **Rate limits are in place, but partly unused yet:** each policy is applied by the checkpoint that adds its route (registration C8, login and refresh C9, user list C12, …).
 
 ## Infrastructure
 - No CD. The course only requires a service called through an HTTP client.

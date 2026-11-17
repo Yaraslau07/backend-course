@@ -56,7 +56,8 @@ export class AccessAuthenticator {
       this.logger.error(
         {
           event: 'access_check',
-          category: 'database',
+          result: 'unavailable',
+          category: 'users',
           error: error instanceof Error ? error.name : 'unknown',
         },
         'access check unavailable: user lookup failed',

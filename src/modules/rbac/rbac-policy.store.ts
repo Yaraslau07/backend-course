@@ -105,6 +105,7 @@ export class RbacPolicyStore implements OnModuleInit, OnApplicationBootstrap {
       this.logger.error(
         {
           event: 'rbac_version_check',
+          category: 'rbac_version',
           result: 'failure',
           error: errorName(error),
         },
@@ -179,6 +180,7 @@ export class RbacPolicyStore implements OnModuleInit, OnApplicationBootstrap {
         {
           event: 'rbac_reload',
           result: 'failure',
+          category: 'rbac_snapshot',
           previous,
           reason:
             error instanceof PolicyInconsistency

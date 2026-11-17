@@ -12,9 +12,8 @@ export function currentUserId(
   _data: unknown,
   context: ExecutionContext,
 ): string {
-  const request = context
-    .switchToHttp()
-    .getRequest<FastifyRequest & { authUserId?: string }>();
+  // `authUserId` is declared on FastifyRequest by the access authenticator, which sets it.
+  const request = context.switchToHttp().getRequest<FastifyRequest>();
   if (!request.authUserId) {
     throw new AppException('authorization_unavailable');
   }

@@ -1,7 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import { serializeRequest, serializeResponse } from './logging.module';
+import {
+  type RoutedMessage,
+  serializeRequest,
+  serializeResponse,
+  withRoute,
+} from './logging.module';
 import { genReqId } from './request-id';
 import { pseudonymize } from './pseudonymize';
 
@@ -25,24 +30,29 @@ describe('genReqId()', () => {
 });
 
 describe('serializers', () => {
-  it('log method and path, never the query string or headers', () => {
+  it('bind only the id and method: never the concrete path, query string or headers', () => {
     const req = {
       id: 'r1',
       method: 'GET',
-      url: '/admin/users?q=secret&cursor=abc',
+      url: '/users/3f2b8f0e-6a1d-4c8e-9a51-0d7f6b2c1e44?q=secret&cursor=abc',
       headers: { cookie: 'access_token=x' },
     } as unknown as IncomingMessage;
-    expect(serializeRequest(req)).toEqual({
-      id: 'r1',
-      method: 'GET',
-      path: '/admin/users',
-    });
-    expect(serializeRequest({ method: 'GET' } as IncomingMessage).path).toBe(
-      '',
-    );
+
+    expect(serializeRequest(req)).toEqual({ id: 'r1', method: 'GET' });
     expect(serializeResponse({ statusCode: 204 } as ServerResponse)).toEqual({
       statusCode: 204,
     });
+  });
+
+  it('add the matched route pattern to the completion line (spec 1.3 §1.5: no target id before it may be read)', () => {
+    const routed = { routePattern: '/users/:userId' } as RoutedMessage;
+
+    expect(withRoute(routed, { responseTime: 3 })).toEqual({
+      responseTime: 3,
+      route: '/users/:userId',
+    });
+    // An unmatched URL could be anything, so it isn't logged at all.
+    expect(withRoute({} as RoutedMessage, {})).toEqual({ route: null });
   });
 });
 

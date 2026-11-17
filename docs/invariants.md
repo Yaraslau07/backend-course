@@ -47,7 +47,7 @@ Shared semantics. Each scenario has **its own HMAC key**.
 
 ## Authorization chain (every protected route)
 
-access cookie → current user is `active` → CSRF (cross-origin writes) → RBAC `permission@action` → load resource → ownership → handler.
+access cookie → current user is `active` → CSRF (cross-origin writes) → IP and user rate limits → RBAC `permission@action` → (in the handler) `Ownership.selfOr` before the lookup → load resource → `Ownership.assertOwner` → business logic (D48).
 
 - Every route declares one of: `@Public()`; `@Internal()` (readiness only); exactly one `@RequirePermission(permission, action)`; `@Receipt(header)`, optionally with one pair. A missing or conflicting declaration, or a name that fails the RBAC pattern, fails readiness (`route_declarations`), and the route answers `503 authorization_unavailable` without running (D23, D24).
 - A receipt route with the header present runs the handler, which checks the receipt; the cookie is not read. Without the header it follows the pair's chain, or answers `401 invalid_session` if it has no pair (D26).
@@ -116,7 +116,8 @@ email (cleartext), password, password hash, OTP, magic-link token, HMAC, JWT, `C
 
 - An unknown email on login is logged as `pseudonymize(email)` (HMAC with `LOG_PSEUDONYM_HMAC_KEY`).
 - JWT failure categories: `missing`, `malformed`, `signature`, `expired`, `claims`, `token_use`, `user_inactive`.
-- Every request has a `requestId` (UUID, echoed in `X-Request-Id`).
+- Every request has a `requestId` (UUID, echoed in `X-Request-Id`). The request log names the matched route pattern (`/users/:userId`), never the concrete path (D49).
+- 401, 403 and 503 log a category: `missing`, `malformed`, `signature`, `expired`, `claims`, `token_use`, `user_inactive`; `permission_denied`, `ownership_denied`, `csrf_rejected`; `users`, `rbac_version`, `rbac_snapshot`, `route_configuration`.
 
 ## Keys (all different, each ≥ 32 random bytes, base64url)
 

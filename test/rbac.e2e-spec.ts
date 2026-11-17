@@ -17,6 +17,8 @@ import {
   actorWithRoles,
   bumpPolicy,
   ensureBootstrapped,
+  ensureProbePermission,
+  probeRole as sharedProbeRole,
   policyVersion,
   roleId,
   uniqueName,
@@ -232,53 +234,11 @@ describe('The access check on protected routes (spec 1.1 §1.3.1)', () => {
 
   beforeAll(async () => {
     await ensureBootstrapped(app);
-    // The probe routes need `probe@read` and `probe@write`; created once, kept across runs.
-    await db.transaction(async (manager) => {
-      const [existing] = await manager.query<{ id: string }[]>(
-        `SELECT id FROM permissions WHERE name = 'probe'`,
-      );
-      probeId =
-        existing?.id ??
-        (
-          await manager.query<{ id: string }[]>(
-            `INSERT INTO permissions (name) VALUES ('probe') RETURNING id`,
-          )
-        )[0].id;
-      await manager.query(
-        `INSERT INTO permission_actions (permission_id, action) VALUES ($1, 'read'), ($1, 'write')
-         ON CONFLICT DO NOTHING`,
-        [probeId],
-      );
-      await manager.query(
-        `UPDATE rbac_policy_state SET version = version + 1, updated_at = now() WHERE id = 1`,
-      );
-    });
+    probeId = await ensureProbePermission(app);
   });
 
   /** A new role with one grant on `probe`; `actions` undefined means all actions. */
-  async function probeRole(actions?: string[]): Promise<string> {
-    const name = uniqueName('probe-role');
-    await db.transaction(async (manager) => {
-      const [role] = await manager.query<{ id: string }[]>(
-        `INSERT INTO roles (name) VALUES ($1) RETURNING id`,
-        [name],
-      );
-      const [grant] = await manager.query<{ id: string }[]>(
-        `INSERT INTO grants (role_id, permission_id, all_actions) VALUES ($1, $2, $3) RETURNING id`,
-        [role.id, probeId, actions === undefined],
-      );
-      for (const action of actions ?? []) {
-        await manager.query(
-          `INSERT INTO grant_actions (grant_id, permission_id, action) VALUES ($1, $2, $3)`,
-          [grant.id, probeId, action],
-        );
-      }
-      await manager.query(
-        `UPDATE rbac_policy_state SET version = version + 1, updated_at = now() WHERE id = 1`,
-      );
-    });
-    return name;
-  }
+  const probeRole = (actions?: string[]) => sharedProbeRole(app, actions);
 
   const read = (actor: Actor) => call(actor, 'GET', '/__routes/protected');
   const write = (actor: Actor, headers?: Record<string, string>) =>
@@ -433,8 +393,11 @@ describe('The access check on protected routes (spec 1.1 §1.3.1)', () => {
     expect(logs.lines()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          event: 'access_denied',
+          event: 'rbac_decision',
+          result: 'denied',
+          category: 'permission_denied',
           actorUserId: actor.id,
+          operation: 'RouteProbeController.protectedRoute',
           permission: 'probe',
           action: 'read',
         }),

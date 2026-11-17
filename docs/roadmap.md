@@ -15,8 +15,8 @@ The order the assignment is being built in, and why. Update the status column as
 | C8. Registration | 1c | 1.0 | ✅ done |
 | C9. Authentication | 1c | 1.2 | ✅ done |
 | C10. RBAC | 1c | 1.1 | ✅ done |
-| C11. Authorization chain | 1c | 1.3 | ⏭ next |
-| C12. View and list | 2 | 1.4, 1.7 | pending |
+| C11. Authorization chain | 1c | 1.3 | ✅ done |
+| C12. View and list | 2 | 1.4, 1.7 | ⏭ next |
 | C13. Update | 2 | 1.5 | pending |
 | C14. Delete | 2 | 1.6 | pending |
 | C15. Transformation framework | 3 | 2.0 | pending |
@@ -129,7 +129,7 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
 4. ✅ **Throttling** (C5, D29–D32): every spec limit as a named policy; exact sliding windows in Postgres with HMAC keys; `@RateLimit()` for IP-keyed limits on routes, `RateLimiter` for custom ones; cleanup every 5 minutes.
 5. ✅ **MailService** (C6, D33–D36): nodemailer with a 2 s limit, OTP and magic-link templates (token in the URL fragment), an `smtp` readiness check. Tests read mail through the Mailpit API.
 
-## Phase 1c: Core auth and access ⏭
+## Phase 1c: Core auth and access ✅
 
 **Sequential.** Each step depends on the previous one.
 
@@ -157,7 +157,7 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
    - the admin CRUD for roles, permissions, grants and user roles
    - the last-`rbac@manage`-holder guard
    - the `user` role assigned on activation
-5. **Authorization chain** (spec 1.3): access → active user → CSRF → IP and user rate limits → RBAC → resource → ownership, with `503 authorization_unavailable`. It replaces the fail-closed `protectedChain` in `route-access.guard.ts`, and must enforce the route's `@RateLimit` policies, both kinds (D37).
+5. ✅ **Authorization chain** (spec 1.3; C11, D48–D49): access → active user → CSRF → IP and user rate limits → RBAC → resource → ownership, with `503 authorization_unavailable`. It replaces the fail-closed `protectedChain` in `route-access.guard.ts`, and must enforce the route's `@RateLimit` policies, both kinds (D37).
 
 ## Phase 2: User features
 
