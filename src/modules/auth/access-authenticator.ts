@@ -5,6 +5,7 @@ import { DataSource } from 'typeorm';
 
 import { ACCESS_COOKIE } from '@/core/app/configure-app';
 import { AppException } from '@/core/errors/app.exception';
+import { classifyDbError } from '@/core/errors/db-errors';
 
 import { AuthCookies } from './auth-cookies';
 import { TokenService } from './tokens/token.service';
@@ -50,6 +51,8 @@ export class AccessAuthenticator {
         [userId],
       );
     } catch (error) {
+      // Only an outage is a 503; a bug reaches the error filter as the 500 it is.
+      if (classifyDbError(error)?.kind !== 'unavailable') throw error;
       this.logger.error(
         {
           event: 'access_check',

@@ -195,3 +195,18 @@ From the `/code-review` of C2–C6:
 - **Confirm and resend have no IP rate limit** of their own, as in registration (D41): an OTP allows 5 tries per mail, and the mails themselves are limited by the 60 s cooldown and by the login limits.
 - **The access check runs now (amends D25).** On a protected route the guard authenticates first: no cookie or a bad one gives `401 invalid_session`, and a user who can't be read gives `503 authorization_unavailable`. Then it still fails closed with 503 until C11 adds CSRF, user limits and RBAC. The verified id is put on `request.authUserId` for the chain. Chosen by the author on 2026-11-17.
 - **pg `connectionTimeoutMillis` is 5 s,** so an unreachable database (dropped packets rather than a refused connection) gives a prompt 503 instead of waiting for the OS timeout. Closes the gap noted in C2.
+
+## D44: C9 review fixes (2026-11-17, amends D43)
+`/code-review medium main...HEAD` raised nine findings. `/security-review` found nothing at the reporting bar.
+
+**Fixed:**
+- **Only a decided 401 keeps the `login_failures` slot.** Before, the slot was given back only on success. So a database error, a timeout, or a cooldown `429` after a correct password still counted as a failed check, and could lock a real user out for 15 minutes during a database blip. Now any other outcome gives the slot back. A late `401` (the user was blocked between the password check and the lock) keeps it, as D43 says.
+- **The access check answers 503 only for an outage.** It uses `classifyDbError(...).kind === 'unavailable'`. Any other error reaches the filter as a `500`, so a bug doesn't look like the database being down.
+- **A deleted user (no hash) is logged as `user_inactive`,** not `wrong_password`.
+- **A refusal by the failure limit is logged with the email pseudonym,** so attacks on one address can be matched (spec 1.2 §1.5).
+
+**Not changed, and why:**
+- **Core's guard imports `AccessAuthenticator` from the auth module.** C11 rebuilds the whole chain (access → CSRF → limits → RBAC) and decides where its pieces live. Moving the authenticator now would move it twice. `route-access.ts` already imports from `modules/rbac`.
+- **Refresh and the access check each have their own "token → active user" code.** Spec 1.2 gives them different answers when the database is down (`503 authorization_unavailable` in the chain, a plain `503` on refresh), so a shared helper would need a flag. The shared part is three lines.
+- **`LoginConfirmDto` copies `RegistrationConfirmDto`.** The two token formats already differ (registration's token has no id, D41), and email change and deletion will add their own fields. A shared DTO waits until C13 shows what is actually common.
+- **`ACCESS_COOKIE` lives in `configure-app.ts`** because Swagger's cookie scheme there needs it. Moving it is cosmetic and can happen in C11 with the chain.

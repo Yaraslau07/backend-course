@@ -68,21 +68,38 @@ export class LoginService implements OnModuleInit {
   }
 
   async login(dto: LoginDto, ip: string): Promise<LoginResult> {
-    // Failure-only limit (D32): take a slot before the slow check, give it back on success, so
-    // concurrent guesses can't all slip past 5. Unknown emails count too, or the limit would
-    // tell which emails exist.
+    // Failure-only limit (D32): take a slot before the slow check, so concurrent guesses can't
+    // all slip past 5. Only a decided 401 keeps it (D44): unknown emails count too, or the limit
+    // would tell which emails exist; a success, a cooldown or an outage gives it back.
     const limitKey = [dto.email, ip];
     const slot = await this.limiter.consume('login_failures', limitKey);
     if (!slot.allowed) {
-      this.logger.warn(
-        { event: 'login', result: 'rate_limited', policy: 'login_failures' },
-        'login refused by the failure limit',
-      );
+      this.event('login', 'rate_limited', {
+        reason: 'login_failures',
+        emailPseudonym: this.pseudonym(dto.email),
+      });
       throw new AppException('too_many_requests', {
         retryAfterSeconds: slot.retryAfterSeconds,
       });
     }
 
+    let result: LoginResult;
+    try {
+      result = await this.attempt(dto);
+    } catch (error) {
+      const credentialFailure =
+        error instanceof AppException && error.code === 'invalid_credentials';
+      if (!credentialFailure) {
+        await this.limiter.release('login_failures', limitKey);
+      }
+      throw error;
+    }
+    await this.limiter.release('login_failures', limitKey);
+    return result;
+  }
+
+  /** Spec 1.2 §1.3.1 steps 2–8, once the failure limit has allowed the attempt. */
+  private async attempt(dto: LoginDto): Promise<LoginResult> {
     const [user] = await this.db.query<
       (LockedUser & { password_hash: string | null })[]
     >(`SELECT id, email, status, password_hash FROM users WHERE email = $1`, [
@@ -94,12 +111,10 @@ export class LoginService implements OnModuleInit {
       dto.password,
     );
     if (!user) this.refuseLogin('unknown_email', undefined, dto.email);
-    if (!matches || !user.password_hash) {
-      this.refuseLogin('wrong_password', user.id);
-    }
+    // A deleted user has no hash: not a wrong password, an inactive account.
+    if (!user.password_hash) this.refuseLogin('user_inactive', user.id);
+    if (!matches) this.refuseLogin('wrong_password', user.id);
     if (user.status !== 'active') this.refuseLogin('user_inactive', user.id);
-
-    await this.limiter.release('login_failures', limitKey);
 
     if (!this.config.get('LOGIN_EMAIL_CONFIRMATION_ENABLED')) {
       const pair = this.tokens.issuePair(user.id);
@@ -288,16 +303,14 @@ export class LoginService implements OnModuleInit {
     this.event('login', 'failure', {
       reason,
       userId,
-      ...(email === undefined
-        ? {}
-        : {
-            emailPseudonym: pseudonymize(
-              email,
-              this.config.get('LOG_PSEUDONYM_HMAC_KEY'),
-            ),
-          }),
+      ...(email === undefined ? {} : { emailPseudonym: this.pseudonym(email) }),
     });
     throw new AppException('invalid_credentials');
+  }
+
+  /** An irreversible id for an email, so attacks on one address can be matched in logs. */
+  private pseudonym(email: string): string {
+    return pseudonymize(email, this.config.get('LOG_PSEUDONYM_HMAC_KEY'));
   }
 
   /** Spec 1.2 §1.5: event, result, user id, method and attempt id. Never the email or secrets. */

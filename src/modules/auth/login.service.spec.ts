@@ -256,7 +256,7 @@ describe('LoginService', () => {
     });
 
     it('refuses with 401 when the user stopped being active before the lock', async () => {
-      const { service, engine } = setup({
+      const { service, engine, limiter } = setup({
         confirm: true,
         lockedStatus: 'blocked',
       });
@@ -266,10 +266,52 @@ describe('LoginService', () => {
       );
       expect(engine.issue).not.toHaveBeenCalled();
       expect(engine.deliver).not.toHaveBeenCalled();
+      // A 401 like any other: the failure slot stays counted (D44).
+      expect(limiter.release).not.toHaveBeenCalled();
+    });
+
+    it('gives the slot back when the database fails: an outage is not a failed check', async () => {
+      const { service, limiter, query } = setup();
+      const down = new Error('connection timeout');
+      query.mockRejectedValueOnce(down);
+
+      await expect(service.login(LOGIN, '203.0.113.1')).rejects.toBe(down);
+      expect(limiter.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('records a deleted user (no hash) as inactive, not as a wrong password', async () => {
+      const { service } = setup({
+        user: {
+          id: USER,
+          email: EMAIL,
+          status: 'deleted',
+          password_hash: null,
+        },
+        passwordOk: false,
+      });
+
+      await codeOf(() => service.login(LOGIN, '203.0.113.1'));
+
+      expect((warn.mock.calls as unknown[][])[0][0]).toMatchObject({
+        reason: 'user_inactive',
+      });
+    });
+
+    it('logs a refusal by the failure limit with the email pseudonym', async () => {
+      const { service } = setup({ allowed: false });
+
+      await codeOf(() => service.login(LOGIN, '203.0.113.1'));
+
+      expect((warn.mock.calls as unknown[][])[0][0]).toMatchObject({
+        event: 'login',
+        result: 'rate_limited',
+        emailPseudonym: expect.any(String) as string,
+      });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(EMAIL);
     });
 
     it('passes the cooldown refusal on, without mail', async () => {
-      const { service, engine } = setup({ confirm: true });
+      const { service, engine, limiter } = setup({ confirm: true });
       engine.issue.mockResolvedValueOnce({
         ok: false,
         error: new ChallengeRejected('resend_cooldown', 'cooldown', {
@@ -281,6 +323,8 @@ describe('LoginService', () => {
         'resend_cooldown',
       );
       expect(engine.deliver).not.toHaveBeenCalled();
+      // The password was right: the slot is given back.
+      expect(limiter.release).toHaveBeenCalledTimes(1);
     });
   });
 

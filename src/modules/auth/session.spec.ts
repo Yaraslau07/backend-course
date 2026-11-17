@@ -240,17 +240,25 @@ describe('AccessAuthenticator', () => {
   });
 
   it('answers an unreadable user with 503 authorization_unavailable, never 401', async () => {
-    const auth = new AccessAuthenticator(
-      dbReturning(new Error('ECONNREFUSED')).db,
-      tokens,
-      cookies,
-    );
+    const down = Object.assign(new Error('connect failed'), {
+      code: 'ECONNREFUSED',
+    });
+    const auth = new AccessAuthenticator(dbReturning(down).db, tokens, cookies);
 
     expect(
       await codeOf(() =>
         auth.authenticate(requestWith({ access_token: access() })),
       ),
     ).toBe('authorization_unavailable');
+  });
+
+  it('lets an error that is not an outage through to the filter (a 500, not a 503)', async () => {
+    const bug = new TypeError('boom');
+    const auth = new AccessAuthenticator(dbReturning(bug).db, tokens, cookies);
+
+    await expect(
+      auth.authenticate(requestWith({ access_token: access() })),
+    ).rejects.toBe(bug);
   });
 });
 
