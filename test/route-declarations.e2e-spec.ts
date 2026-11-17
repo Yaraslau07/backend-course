@@ -15,7 +15,7 @@ import {
  * Spec 1.3 §1.3.2: every route declares public, exactly one permission@action pair, or a receipt
  * (optionally with one pair). A missing or conflicting declaration fails readiness, and a request
  * that reaches such a route gets 503 authorization_unavailable without running the handler.
- * Until the authorization chain lands (C11), protected routes fail closed the same way.
+ * Until the authorization chain lands (C11), protected routes authenticate, then fail closed the same way.
  */
 describe('Route declarations (e2e)', () => {
   const logs = new LogCapture();
@@ -113,10 +113,10 @@ describe('Route declarations (e2e)', () => {
       },
     );
 
-    it('fails closed on a protected route until the authorization chain exists', async () => {
+    it('authenticates first on a protected route: no session is 401 invalid_session (spec 1.2 §1.3.6)', async () => {
       expect(await hit('/__routes/protected')).toEqual({
-        status: 503,
-        code: 'authorization_unavailable',
+        status: 401,
+        code: 'invalid_session',
         ran: false,
       });
     });
@@ -146,8 +146,8 @@ describe('Route declarations (e2e)', () => {
 
     it('sends a receipt route without the header down the protected chain', async () => {
       expect(await hit('/__routes/receipt-or-pair')).toEqual({
-        status: 503,
-        code: 'authorization_unavailable',
+        status: 401,
+        code: 'invalid_session',
         ran: false,
       });
     });

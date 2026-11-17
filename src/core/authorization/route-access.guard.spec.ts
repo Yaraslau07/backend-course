@@ -5,6 +5,7 @@ import { AppException } from '@/core/errors/app.exception';
 
 import type { RateLimiter } from '@/core/rate-limit/rate-limiter.service';
 import { RateLimit } from '@/core/rate-limit/rate-limit.decorator';
+import type { AccessAuthenticator } from '@/modules/auth/access-authenticator';
 
 import { CsrfPolicy } from './csrf';
 
@@ -87,10 +88,15 @@ async function rejection(
 describe('RouteAccessGuard', () => {
   const enforce = jest.fn<Promise<void>, [string, string[]]>();
   const limiter = { enforce } as unknown as RateLimiter;
-  const guard = new RouteAccessGuard(csrf, limiter);
+  const authenticate = jest.fn<Promise<string>, [unknown]>();
+  const authenticator = { authenticate } as unknown as AccessAuthenticator;
+  const guard = new RouteAccessGuard(csrf, limiter, authenticator);
 
   beforeEach(() => {
     enforce.mockReset().mockResolvedValue(undefined);
+    authenticate
+      .mockReset()
+      .mockResolvedValue('3f2b8f0e-6a1d-4c8e-9a51-0d7f6b2c1e44');
     jest.spyOn(Logger.prototype, 'error').mockImplementation();
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();
   });
@@ -102,10 +108,34 @@ describe('RouteAccessGuard', () => {
     expect(await guard.canActivate(contextFor('internalRoute'))).toBe(true);
   });
 
-  it('fails closed on a protected route until the authorization chain exists', async () => {
+  it('authenticates first on a protected route, then fails closed until the chain exists (C11)', async () => {
     expect(
       await rejection(() => guard.canActivate(contextFor('protectedRoute'))),
     ).toBe('authorization_unavailable');
+    expect(authenticate).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers a protected route with the authenticator refusal (401, or 503 with the DB down)', async () => {
+    authenticate.mockRejectedValueOnce(new AppException('invalid_session'));
+    expect(
+      await rejection(() => guard.canActivate(contextFor('protectedRoute'))),
+    ).toBe('invalid_session');
+
+    authenticate.mockRejectedValueOnce(
+      new AppException('authorization_unavailable'),
+    );
+    expect(
+      await rejection(() => guard.canActivate(contextFor('protectedRoute'))),
+    ).toBe('authorization_unavailable');
+  });
+
+  it('never authenticates on public, internal or receipt-carrying routes', async () => {
+    await guard.canActivate(contextFor('publicRoute'));
+    await guard.canActivate(contextFor('internalRoute'));
+    await guard.canActivate(
+      contextFor('receiptOrPair', { 'deletion-receipt': 'a'.repeat(32) }),
+    );
+    expect(authenticate).not.toHaveBeenCalled();
   });
 
   it('fails closed on an undeclared or conflicting route', async () => {
@@ -144,9 +174,10 @@ describe('RouteAccessGuard', () => {
   });
 
   it('without the header, a receipt route with a pair follows the protected chain', async () => {
+    authenticate.mockRejectedValueOnce(new AppException('invalid_session'));
     expect(
       await rejection(() => guard.canActivate(contextFor('receiptOrPair'))),
-    ).toBe('authorization_unavailable');
+    ).toBe('invalid_session');
   });
 
   it('checks CSRF on a public write, since login and registration are public (spec 1.2 §1.3.3)', async () => {
@@ -186,12 +217,13 @@ describe('RouteAccessGuard', () => {
     ).toBe('csrf_rejected');
   });
 
-  it('answers a protected write 503 before any CSRF check: CSRF comes after identity (spec 1.3)', async () => {
+  it('authenticates a protected write before any CSRF check: CSRF comes after identity (spec 1.3)', async () => {
+    authenticate.mockRejectedValueOnce(new AppException('invalid_session'));
     expect(
       await rejection(() =>
         guard.canActivate(contextFor('protectedRoute', EVIL, 'http', 'POST')),
       ),
-    ).toBe('authorization_unavailable');
+    ).toBe('invalid_session');
   });
 
   it('enforces the route IP limits by request.ip after CSRF, before the handler', async () => {
