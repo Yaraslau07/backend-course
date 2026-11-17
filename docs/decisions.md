@@ -257,3 +257,26 @@ The verified user id goes to handlers through `@CurrentUserId()`, which fails cl
 - **The e2e leak check** matches an all-digit secret (an OTP) only as a whole token. A 6-digit code also turns up by chance inside the UUIDs in the logs, and did once (`challenges.e2e-spec.ts`).
 
 **Not changed:** an activation that commits while the bootstrap transaction is still open can miss both the default-role insert and the bootstrap's backfill. The bootstrap runs once, in `onApplicationBootstrap`, before this instance listens, so only a second instance taking registrations at that exact moment is exposed. Listed in `docs/known-gaps.md`.
+
+## D48: The full authorization chain and the ownership step (2026-11-17, completes D46)
+- **The chain**, in the order of spec 1.3 §1.3.1 and §1.6. Each step runs only if the previous one passed, and the handler only after all of them:
+  1. Access JWT from the cookie only (`401 invalid_session` with a log category).
+  2. The user is `active`, read by `id, status` (`401`, or `503` with category `users` if the read fails).
+  3. CSRF on writes (`403 csrf_rejected`).
+  4. The route's IP limits, then its user-keyed limits by the verified id (`429`).
+  5. RBAC (`403 permission_denied`, or `503` with category `rbac_version` or `rbac_snapshot`).
+  
+  A request refused at any step uses up no later step's budget: a CSRF refusal counts against no limit, and a missing session counts against no user limit.
+- **Limits sit before RBAC,** as D37 and the roadmap have it. A user who is going to be refused still uses up their own budget, which also caps probing for rights. They are counted per user id, so this hurts nobody else.
+- **The ownership step is a service the handler calls** (`Ownership`, exported by `AuthorizationModule`). The guard can't run it, because only the handler knows the target.
+  - `selfOr(actor, target, permission, anyAction)` runs **before the lookup** (spec 1.4 §1.3.1 steps 4–5). The caller's own id passes. Someone else's id needs the extra action (`users@read_any`, `update_any`, `delete_any`), or gets `403 ownership_denied`. So without the right, the answer is the same whether the target exists or not, and the target id isn't logged.
+  - `assertOwner(actor, owner)` runs **after the load**, for resources that carry an owner (Part 2's transformations): `403 ownership_denied`.
+  - A `404` is only possible once both checks pass.
+- **`ownership_denied` for a missing `_any` action,** not `permission_denied`: the caller has the right to the resource type, just not to someone else's (docs/invariants.md, "allowed type, not your resource").
+- **Every RBAC decision is logged** (`event: rbac_decision`) with `actorUserId`, the operation (`Controller.handler`), the pair, the policy version and the result. Allowed decisions are logged at `info` too. Spec 1.3 §1.5 asks for "successful admission to critical operations"; logging every admission avoids having to keep a list of which operations are critical, and the volume is small for this service.
+- **The client-side refresh rules (spec 1.3 §1.3.3)** concern a frontend this project doesn't have. The server provides what they rely on: a guard `401 invalid_session` always comes before the handler starts, so a retry after a refresh is safe. A `403` or `503` never means "refresh".
+
+## D49: Request logs name the route pattern, not the path (2026-11-17, amends D8)
+D8 logged `method` and `path`, on the view that path segments are ids. Spec 1.3 §1.5 allows a target id in logs only once it may be read, and spec 1.6 forbids user ids in deletion logs. A path like `/users/{id}` is logged before either check, so it breaks both rules. The completion line now has `route`, the pattern Fastify matched (`/users/:userId`), or `null` for a URL that matched no route, since it could be anything. Handlers log the target id themselves once it is allowed.
+
+pino-http binds the request serializer when the request starts, before the route is on the raw request. So the bound `req` carries only `id` and `method`, and `route` is added by `customSuccessObject` / `customErrorObject` when the request completes. The pattern is copied onto the raw request in `configureApp`'s `onRequest` hook.
