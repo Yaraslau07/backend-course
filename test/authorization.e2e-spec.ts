@@ -434,6 +434,24 @@ describe('user-keyed rate limits on protected routes (spec 1.3, D46)', () => {
   });
 });
 
+describe('the request log (spec 1.3 §1.5)', () => {
+  it('names the matched route pattern, never the concrete path with the target id', async () => {
+    const actor = await reader();
+    const target = randomUUID();
+    logs.clear();
+
+    await call('GET', `/__routes/owned/${target}`, { cookies: actor.cookies });
+
+    const completed = logs
+      .lines()
+      .filter((line) => line.msg === 'request completed');
+    expect(completed).toEqual([
+      expect.objectContaining({ route: '/__routes/owned/:userId' }),
+    ]);
+    expect(logs.text()).not.toContain(target);
+  });
+});
+
 describe('public routes and preflight (spec 1.3 §1.3.2, §1.3.5)', () => {
   it('ignores an invalid cookie on a public route', async () => {
     const live = await call('GET', '/health/live', {

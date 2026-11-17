@@ -35,17 +35,24 @@ export const REDACT_PATHS = [
 export type RoutedMessage = IncomingMessage & { routePattern?: string };
 
 /**
- * Logs the method and the matched route pattern, never the concrete URL: a path segment can be a
- * target id, which spec 1.3 §1.5 allows in logs only once it may be read (and spec 1.6 never, for
- * deletion). The query string can carry search terms and cursors. An unmatched request logs no
- * route, since its URL could be anything (D49).
+ * Logs the method only, never the URL: a path segment can be a target id, which spec 1.3 §1.5 allows
+ * in logs only once it may be read (and spec 1.6 never, for deletion), and the query string can
+ * carry search terms and cursors. pino-http binds this at the start of the request, before the
+ * route is known; the route pattern is added to the completion line instead (`withRoute`, D49).
  */
 export function serializeRequest(req: RoutedMessage) {
-  return {
-    id: req.id,
-    method: req.method,
-    route: req.routePattern ?? null,
-  };
+  return { id: req.id, method: req.method };
+}
+
+/**
+ * The completion line's extra field: the matched route pattern (`/users/:userId`), or null for a
+ * request that matched none, whose URL could be anything.
+ */
+export function withRoute<T extends object>(
+  req: RoutedMessage,
+  value: T,
+): T & { route: string | null } {
+  return { ...value, route: req.routePattern ?? null };
 }
 
 export function serializeResponse(res: ServerResponse) {
@@ -69,6 +76,17 @@ export function serializeResponse(res: ServerResponse) {
             req: serializeRequest,
             res: serializeResponse,
           },
+          customSuccessObject: (
+            req: RoutedMessage,
+            _res: ServerResponse,
+            value: object,
+          ) => withRoute(req, value),
+          customErrorObject: (
+            req: RoutedMessage,
+            _res: ServerResponse,
+            _error: Error,
+            value: object,
+          ) => withRoute(req, value),
           customProps: () => ({ service: 'backend-course' }),
           transport:
             env === 'development' && !sink
