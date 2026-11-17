@@ -31,15 +31,16 @@ export class RbacAuthorizer {
     permission: string,
     action: string,
   ): Promise<void> {
+    // Independent reads, in parallel: the policy version (and a reload if needed) and the roles.
+    const roles = this.db.query<{ role_id: string }[]>(
+      `SELECT role_id FROM user_roles WHERE user_id = $1`,
+      [userId],
+    );
+    roles.catch(() => undefined); // handled below; keeps a rejection from going unobserved
     const snapshot = await this.store.current();
     let roleIds: string[];
     try {
-      roleIds = (
-        await this.db.query<{ role_id: string }[]>(
-          `SELECT role_id FROM user_roles WHERE user_id = $1`,
-          [userId],
-        )
-      ).map((row) => row.role_id);
+      roleIds = (await roles).map((row) => row.role_id);
     } catch (error) {
       if (classifyDbError(error)?.kind !== 'unavailable') throw error;
       this.logger.error(

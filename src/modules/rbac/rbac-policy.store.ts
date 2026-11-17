@@ -33,6 +33,8 @@ export class RbacPolicyStore implements OnModuleInit, OnApplicationBootstrap {
   private snapshot: PolicySnapshot | null = null;
   /** One reload at a time; concurrent requests wait for the same one. */
   private loading: Promise<PolicySnapshot> | null = null;
+  /** Until the bootstrap has run to completion once, every load tries it first (D47). */
+  private bootstrapPending = true;
 
   constructor(
     @InjectDataSource() private readonly db: DataSource,
@@ -42,22 +44,36 @@ export class RbacPolicyStore implements OnModuleInit, OnApplicationBootstrap {
   ) {}
 
   onModuleInit(): void {
-    this.readiness.register('rbac', () =>
-      Promise.resolve(this.snapshot ? 'up' : { down: 'policy_not_loaded' }),
-    );
+    // Without a snapshot, readiness tries to load one itself: an instance that is out of rotation
+    // gets no protected request that would otherwise trigger the reload (D47).
+    this.readiness.register('rbac', async () => {
+      if (!this.snapshot) await this.load().catch(() => undefined);
+      return this.snapshot ? 'up' : { down: 'policy_not_loaded' };
+    });
   }
 
   /** Bootstrap (if the policy is empty), then the first load. Readiness stays down until it works. */
   async onApplicationBootstrap(): Promise<void> {
+    await this.load().catch(() => undefined);
+  }
+
+  /**
+   * Runs the bootstrap until it completes once (whatever it decides). A failure, for example the
+   * database not being up yet at the first start, fails this load too, so the empty policy is not
+   * served as if it were the real one; the next load tries again.
+   */
+  private async bootstrapOnce(): Promise<void> {
+    if (!this.bootstrapPending) return;
     try {
       await this.bootstrap.run(this.config.get('RBAC_BOOTSTRAP_ADMIN_USER_ID'));
+      this.bootstrapPending = false;
     } catch (error) {
       this.logger.error(
         { event: 'rbac_bootstrap', result: 'failure', error: errorName(error) },
         'RBAC bootstrap failed',
       );
+      throw error;
     }
-    await this.load().catch(() => undefined);
   }
 
   /** The snapshot at the database's current version, or `503 authorization_unavailable`. */
@@ -108,8 +124,10 @@ export class RbacPolicyStore implements OnModuleInit, OnApplicationBootstrap {
   }
 
   private async read(): Promise<PolicySnapshot> {
-    const previous = this.snapshot?.version ?? null;
+    const before = this.snapshot;
+    const previous = before?.version ?? null;
     try {
+      await this.bootstrapOnce();
       const rows = await this.db.transaction(
         'REPEATABLE READ',
         async (manager): Promise<PolicyRows> => {
@@ -136,7 +154,13 @@ export class RbacPolicyStore implements OnModuleInit, OnApplicationBootstrap {
         },
       );
       const snapshot = PolicySnapshot.build(rows);
-      this.snapshot = snapshot;
+      // Overlapping reloads may finish out of order: never replace a newer snapshot with an older one.
+      if (
+        !this.snapshot ||
+        BigInt(snapshot.version) >= BigInt(this.snapshot.version)
+      ) {
+        this.snapshot = snapshot;
+      }
       this.logger.log(
         {
           event: 'rbac_reload',
@@ -148,8 +172,9 @@ export class RbacPolicyStore implements OnModuleInit, OnApplicationBootstrap {
       );
       return snapshot;
     } catch (error) {
-      // Never keep serving the old policy once it is known to be stale (spec 1.1 §1.3.6 step 6).
-      this.snapshot = null;
+      // Never keep serving the old policy once it is known to be stale (spec 1.1 §1.3.6 step 6),
+      // unless another reload already replaced it with a newer one in the meantime.
+      if (this.snapshot === before) this.snapshot = null;
       this.logger.error(
         {
           event: 'rbac_reload',

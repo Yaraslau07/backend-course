@@ -146,7 +146,6 @@ describe('RbacPolicyStore', () => {
       version: '3',
       rows: policy('3'),
     });
-    expect(await readiness()).toEqual({ down: 'policy_not_loaded' });
 
     await store.onApplicationBootstrap();
 
@@ -155,14 +154,34 @@ describe('RbacPolicyStore', () => {
     expect((await store.current()).version).toBe('3');
   });
 
-  it('still loads when the bootstrap fails', async () => {
+  it('does not serve the empty policy when the bootstrap fails; the next load retries it', async () => {
     const { store, bootstrap, readiness } = setup({
       version: '1',
       rows: policy('1'),
     });
-    bootstrap.run.mockRejectedValueOnce(new Error('boom'));
+    bootstrap.run.mockRejectedValueOnce(new Error('db not ready'));
 
     await store.onApplicationBootstrap();
+    expect(bootstrap.run).toHaveBeenCalledTimes(1);
+
+    // Readiness itself tries again, so an instance out of rotation recovers on its own.
+    expect(await readiness()).toBe('up');
+    expect(bootstrap.run).toHaveBeenCalledTimes(2);
+    await store.current();
+    expect(bootstrap.run).toHaveBeenCalledTimes(2);
+  });
+
+  it('loads from the readiness check when there is no snapshot yet', async () => {
+    const state = {
+      version: '1',
+      rows: policy('1'),
+      fail: outage() as Error | undefined,
+    };
+    const { store, readiness } = setup(state);
+    await store.onApplicationBootstrap();
+    expect(await readiness()).toEqual({ down: 'policy_not_loaded' });
+
+    state.fail = undefined;
 
     expect(await readiness()).toBe('up');
   });
@@ -450,6 +469,51 @@ describe('RbacAdminService', () => {
         service.createRole(USER, { name: 'reader', description: null }),
       ),
     ).toBe(code);
+  });
+
+  it('keeps the default role: renaming or deleting `user` is 409 resource_in_use', async () => {
+    const { service } = setup([
+      [/SELECT name FROM roles WHERE id/, [{ name: 'user' }]],
+    ]);
+
+    expect(
+      await codeOf(() =>
+        service.replaceRole(USER, ROLE, { name: 'member', description: null }),
+      ),
+    ).toBe('resource_in_use');
+    expect(await codeOf(() => service.deleteRole(USER, ROLE))).toBe(
+      'resource_in_use',
+    );
+  });
+
+  it('lets `user` keep its name while its description changes', async () => {
+    const { service } = setup([
+      [/SELECT name FROM roles WHERE id/, [{ name: 'user' }]],
+      [
+        /UPDATE roles/,
+        [[{ ...roleRow, name: 'user', description: 'everyone' }], 1],
+      ],
+    ]);
+
+    expect(
+      await service.replaceRole(USER, ROLE, {
+        name: 'user',
+        description: 'everyone',
+      }),
+    ).toMatchObject({ name: 'user', description: 'everyone' });
+  });
+
+  it('logs a refusal with errorCode (the logger redacts `code`)', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn');
+    const { service } = setup([[/DELETE FROM grants/, [[], 1]]], false);
+
+    await codeOf(() => service.deleteGrant(USER, ROLE));
+
+    expect(warn.mock.calls[0][0]).toMatchObject({
+      event: 'rbac_change',
+      result: 'failure',
+      errorCode: 'last_rbac_manager',
+    });
   });
 
   it('maps a foreign-key refusal to 409 resource_in_use', async () => {

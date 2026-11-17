@@ -88,7 +88,7 @@ export class RouteAccessGuard implements CanActivate {
   ): Promise<true> {
     const userId = await this.authenticator.authenticate(request);
     this.csrf.assert(request, this.handlerName(context));
-    await this.enforceIpLimits(context, request);
+    // Before the IP limits, so a request refused here doesn't use up the client's budget.
     if (getRouteRateLimits(context.getHandler()).user.length > 0) {
       this.logger.warn(
         {
@@ -99,6 +99,7 @@ export class RouteAccessGuard implements CanActivate {
       );
       throw new AppException('authorization_unavailable');
     }
+    await this.enforceIpLimits(context, request);
     await this.authorizer.authorize(userId, pair.permission, pair.action);
     return true;
   }

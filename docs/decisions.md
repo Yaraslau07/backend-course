@@ -242,3 +242,18 @@ The author chose to wire RBAC in C10 so the admin API works over HTTP. A protect
 What is still for C11: user-keyed rate limits, the resource and ownership step, and the full chain audit. Until then, a protected route that declares a user-keyed limit answers `503`; it doesn't run without its limit. No such route exists yet.
 
 The verified user id goes to handlers through `@CurrentUserId()`, which fails closed (`503`) if the chain didn't set it.
+
+## D47: C10 review fixes (2026-11-17, amends D45)
+`/code-review medium main...HEAD` raised eight findings, and `/security-review` found nothing at the reporting bar.
+
+**Fixed:**
+- **Readiness loads the policy itself when there is no snapshot.** Before, only a protected request triggered the reload. An instance whose first load failed (the database not up yet) stayed not-ready forever, because a load balancer sends no traffic to a not-ready instance.
+- **A failed bootstrap fails the load.** Before, a bootstrap error was only logged, and the empty policy was then loaded as if it were real: everyone got 403 and nobody could repair it. Now every load retries the bootstrap until it completes once.
+- **The `user` role can't be renamed or deleted** (`409 resource_in_use`). Activation finds it by name, so a rename would silently give new users no role. Its description and grants can still change.
+- **Reloads that finish out of order** no longer replace a newer snapshot with an older one. A failed reload clears the snapshot only if no newer one arrived in the meantime.
+- **The user-limit fail-closed check runs before the IP limits,** so a request refused with 503 doesn't use up the client's IP budget.
+- **The version check and the user-roles read run in parallel**, which saves one round trip per protected request.
+- **The refusal log field is `errorCode`,** not `code`, which the logger redacts.
+- **The e2e leak check** matches an all-digit secret (an OTP) only as a whole token. A 6-digit code also turns up by chance inside the UUIDs in the logs, and did once (`challenges.e2e-spec.ts`).
+
+**Not changed:** an activation that commits while the bootstrap transaction is still open can miss both the default-role insert and the bootstrap's backfill. The bootstrap runs once, in `onApplicationBootstrap`, before this instance listens, so only a second instance taking registrations at that exact moment is exposed. Listed in `docs/known-gaps.md`.

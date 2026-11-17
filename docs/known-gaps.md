@@ -28,6 +28,7 @@ A running list of what's still outstanding. Check it before assuming something i
 ## RBAC
 - **Blocking and deletion don't run the last-holder check yet.** Only an active user counts as an `rbac@manage` holder, so blocking (C13) and deletion (C14) must take the policy lock and run the same check before they change the status.
 - **Validation failures (400) on admin routes are logged by the error filter, not as `rbac_change` events;** refusals the service decides (404, 409, a 400 for a foreign action) are.
+- **Bootstrap vs. a concurrent activation on another instance:** a user activated by a second instance while the first one's bootstrap transaction is open can end up with no role (neither the insert nor the backfill sees the other). Give them `user` through `PUT /admin/rbac/users/{id}/roles` (D47).
 - **Before the bootstrap there is no `user` role,** so an activation assigns nothing; the bootstrap then gives `user` to every active user without roles.
 
 ## Authentication

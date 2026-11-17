@@ -9,7 +9,7 @@ import { classifyDbError } from '@/core/errors/db-errors';
 import type { GrantDto } from './dto/grant.dto';
 import type { PermissionDto } from './dto/permission.dto';
 import type { RoleDto } from './dto/role.dto';
-import { RBAC_MANAGE } from './rbac.types';
+import { DEFAULT_ROLE, RBAC_MANAGE } from './rbac.types';
 
 export interface RoleView {
   id: string;
@@ -153,6 +153,7 @@ export class RbacAdminService {
 
   replaceRole(actor: string, id: string, dto: RoleDto): Promise<RoleView> {
     return this.change(actor, 'replace', 'role', id, async (manager) => {
+      await this.keepDefaultRole(manager, id, dto.name);
       const [[row]] = await manager.query<[RoleRow[], number]>(
         `UPDATE roles SET name = $2, description = $3, updated_at = now() WHERE id = $1
          RETURNING id, name, description, created_at, updated_at`,
@@ -166,6 +167,7 @@ export class RbacAdminService {
   /** A role with grants or users can't go: the foreign keys refuse it, which becomes 409. */
   deleteRole(actor: string, id: string): Promise<void> {
     return this.change(actor, 'delete', 'role', id, async (manager) => {
+      await this.keepDefaultRole(manager, id, null);
       const [, affected] = await manager.query<[unknown, number]>(
         `DELETE FROM roles WHERE id = $1`,
         [id],
@@ -336,6 +338,24 @@ export class RbacAdminService {
   /* ---------- internals ---------- */
 
   /**
+   * Activation finds the default role by its name, so `user` can't be renamed or deleted: every
+   * later registration would silently get no role (D47). Its grants can still change.
+   */
+  private async keepDefaultRole(
+    manager: EntityManager,
+    id: string,
+    newName: string | null,
+  ): Promise<void> {
+    const [role] = await manager.query<{ name: string }[]>(
+      `SELECT name FROM roles WHERE id = $1`,
+      [id],
+    );
+    if (role?.name === DEFAULT_ROLE && newName !== DEFAULT_ROLE) {
+      throw new AppException('resource_in_use');
+    }
+  }
+
+  /**
    * The shape of every change (spec 1.1 §1.3.2–1.3.5, §1.3.6 step 2): policy lock → work →
    * holder check → version + 1, all in one transaction. Logs the outcome by actor, entity and
    * version; never the description or the body.
@@ -387,7 +407,8 @@ export class RbacAdminService {
           entityType,
           entityId,
           result: 'failure',
-          code: refused instanceof AppException ? refused.code : 'error',
+          // Not `code`: the logger redacts `*.code` (see logging.module.ts).
+          errorCode: refused instanceof AppException ? refused.code : 'error',
         },
         'RBAC change refused',
       );

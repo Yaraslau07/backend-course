@@ -667,6 +667,23 @@ describe('The admin API (spec 1.1 §1.3.2–1.3.5)', () => {
     });
   });
 
+  it('keeps the default role: `user` cannot be renamed or deleted (activation finds it by name)', async () => {
+    const userRole = await roleId(db, 'user');
+
+    const renamed = await call(admin, 'PUT', `/admin/rbac/roles/${userRole}`, {
+      name: 'member',
+    });
+    const deleted = await call(
+      admin,
+      'DELETE',
+      `/admin/rbac/roles/${userRole}`,
+    );
+
+    expect(renamed.status).toBe(409);
+    expect(renamed.body.code).toBe('resource_in_use');
+    expect(deleted.status).toBe(409);
+  });
+
   describe('permissions', () => {
     it('creates a permission with normalized actions', async () => {
       const name = uniqueName('perm');
