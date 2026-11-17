@@ -24,15 +24,39 @@ export class RbacAuthorizer {
   /**
    * Resolves when one of the user's current roles allows the pair; otherwise `403
    * permission_denied`, with nothing about roles or the target in the answer. `503
-   * authorization_unavailable` when the policy or the user's roles can't be read.
+   * authorization_unavailable` when the policy or the user's roles can't be read. Both outcomes
+   * are logged with the actor, operation, pair and policy version (spec 1.3 §1.5).
    */
   async authorize(
     userId: string,
     permission: string,
     action: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- logged in the feat commit
-    _operation = 'unknown',
+    operation: string,
   ): Promise<void> {
+    if (!(await this.decide(userId, permission, action, operation))) {
+      throw new AppException('permission_denied');
+    }
+  }
+
+  /**
+   * The same decision without throwing, for a second check inside a handler (the ownership step's
+   * `users@read_any`). `503 authorization_unavailable` still throws: unavailability is never a no.
+   */
+  allows(
+    userId: string,
+    permission: string,
+    action: string,
+    operation: string,
+  ): Promise<boolean> {
+    return this.decide(userId, permission, action, operation);
+  }
+
+  private async decide(
+    userId: string,
+    permission: string,
+    action: string,
+    operation: string,
+  ): Promise<boolean> {
     // Independent reads, in parallel: the policy version (and a reload if needed) and the roles.
     const roles = this.db.query<{ role_id: string }[]>(
       `SELECT role_id FROM user_roles WHERE user_id = $1`,
@@ -46,42 +70,45 @@ export class RbacAuthorizer {
     } catch (error) {
       if (classifyDbError(error)?.kind !== 'unavailable') throw error;
       this.logger.error(
-        { event: 'access_check', category: 'database', actorUserId: userId },
+        {
+          event: 'rbac_decision',
+          result: 'unavailable',
+          category: 'users',
+          actorUserId: userId,
+          operation,
+        },
         'user roles unavailable',
       );
       throw new AppException('authorization_unavailable');
     }
 
     const decision = snapshot.allows(roleIds, permission, action);
-    if (decision === 'allowed') return;
+    const fields = {
+      actorUserId: userId,
+      operation,
+      permission,
+      action,
+      version: snapshot.version,
+    };
+    if (decision === 'allowed') {
+      this.logger.log(
+        { event: 'rbac_decision', result: 'allowed', ...fields },
+        'access allowed by RBAC',
+      );
+      return true;
+    }
     this.logger.warn(
       {
-        event: 'access_denied',
-        actorUserId: userId,
-        permission,
-        action,
+        event: 'rbac_decision',
+        result: 'denied',
+        category: 'permission_denied',
         reason: decision,
-        version: snapshot.version,
+        ...fields,
       },
       'access denied by RBAC',
     );
-    throw new AppException('permission_denied');
+    return false;
   }
-
-  /**
-   * The same decision without throwing, for a second check inside a handler (the ownership step's
-   * `users@read_any`). `503 authorization_unavailable` still throws: unavailability is never a no.
-   */
-  /* eslint-disable @typescript-eslint/no-unused-vars -- signature-only stub, implemented in the feat commit */
-  allows(
-    _userId: string,
-    _permission: string,
-    _action: string,
-    _operation: string,
-  ): Promise<boolean> {
-    throw new Error('not implemented');
-  }
-  /* eslint-enable @typescript-eslint/no-unused-vars */
 
   /**
    * In the activating transaction: gives the user the `user` role if they don't have it yet.

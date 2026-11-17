@@ -31,16 +31,20 @@ export const REDACT_PATHS = [
   '*.email',
 ];
 
+/** The pattern of the matched route (`/users/:userId`), put on the raw request in configureApp. */
+export type RoutedMessage = IncomingMessage & { routePattern?: string };
+
 /**
- * Logs method and path only. The query string is dropped: it can carry search terms (`q`) and cursors,
- * which must not be logged. Path segments are ids (allowed); magic-link tokens travel in URL fragments
- * and POST bodies, never in paths.
+ * Logs the method and the matched route pattern, never the concrete URL: a path segment can be a
+ * target id, which spec 1.3 §1.5 allows in logs only once it may be read (and spec 1.6 never, for
+ * deletion). The query string can carry search terms and cursors. An unmatched request logs no
+ * route, since its URL could be anything (D49).
  */
-export function serializeRequest(req: IncomingMessage) {
+export function serializeRequest(req: RoutedMessage) {
   return {
     id: req.id,
     method: req.method,
-    path: (req.url ?? '').split('?')[0],
+    route: req.routePattern ?? null,
   };
 }
 

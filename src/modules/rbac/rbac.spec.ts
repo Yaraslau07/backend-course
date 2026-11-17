@@ -377,13 +377,15 @@ describe('RbacAuthorizer', () => {
 
   it('answers 503 when the user roles cannot be read', async () => {
     expect(
-      await codeOf(() => setup(outage()).authorize(USER, 'docs', 'read')),
+      await codeOf(() => setup(outage()).authorize(USER, 'docs', 'read', 'op')),
     ).toBe('authorization_unavailable');
   });
 
   it('lets a bug through', async () => {
     const bug = new TypeError('boom');
-    await expect(setup(bug).authorize(USER, 'docs', 'read')).rejects.toBe(bug);
+    await expect(setup(bug).authorize(USER, 'docs', 'read', 'op')).rejects.toBe(
+      bug,
+    );
   });
 
   it('assigns the default role once', async () => {

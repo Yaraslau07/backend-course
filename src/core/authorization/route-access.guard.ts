@@ -76,31 +76,31 @@ export class RouteAccessGuard implements CanActivate {
   }
 
   /**
-   * Spec 1.3 order: access → active user (the authenticator: 401, or 503 if the user can't be read)
-   * → CSRF on writes (after identity, D28) → IP limits → RBAC (403, or 503 without a current
-   * policy). User-keyed limits arrive with C11; until then a route that declares one fails closed
-   * rather than running without its limit (D46).
+   * Spec 1.3 §1.3.1 and §1.6, in this order:
+   * 1. access → active user (the authenticator: 401, or 503 if the user can't be read);
+   * 2. CSRF on writes, after identity (D28);
+   * 3. the route's IP and user limits (429), by `request.ip` and the verified user id;
+   * 4. RBAC (403, or 503 without a current policy).
+   * The resource and ownership step then belongs to the handler (`Ownership`, D48).
    */
   private async protectedChain(
     context: ExecutionContext,
     request: FastifyRequest,
     pair: { permission: string; action: string },
   ): Promise<true> {
+    const operation = this.handlerName(context);
     const userId = await this.authenticator.authenticate(request);
-    this.csrf.assert(request, this.handlerName(context));
-    // Before the IP limits, so a request refused here doesn't use up the client's budget.
-    if (getRouteRateLimits(context.getHandler()).user.length > 0) {
-      this.logger.warn(
-        {
-          category: 'authorization_chain',
-          handler: this.handlerName(context),
-        },
-        'route refused: user-keyed rate limits are not enforced yet',
-      );
-      throw new AppException('authorization_unavailable');
-    }
+    this.csrf.assert(request, operation);
     await this.enforceIpLimits(context, request);
-    await this.authorizer.authorize(userId, pair.permission, pair.action);
+    for (const policy of getRouteRateLimits(context.getHandler()).user) {
+      await this.limiter.enforce(policy, [userId]);
+    }
+    await this.authorizer.authorize(
+      userId,
+      pair.permission,
+      pair.action,
+      operation,
+    );
     return true;
   }
 
