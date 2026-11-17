@@ -17,8 +17,9 @@ import { getRouteAccess } from './route-access';
 
 /**
  * The first step of every request (registered globally). It reads the route's declaration and
- * decides which branch applies, checking CSRF on writes that don't go through the session chain. Until the authorization chain lands (C11), the protected branch
- * fails closed: no handler that needs a permission can run before RBAC exists.
+ * decides which branch applies, checking CSRF on writes that don't go through the session chain.
+ * The protected branch authenticates first (spec 1.2 §1.3.6); until the rest of the chain lands
+ * (C11) it then fails closed: no handler that needs a permission can run before RBAC exists.
  */
 @Injectable()
 export class RouteAccessGuard implements CanActivate {
@@ -53,11 +54,11 @@ export class RouteAccessGuard implements CanActivate {
         }
         // Without it, a receipt-only route has no other way to know the caller.
         if (!access.pair) throw new AppException('invalid_session');
-        return this.protectedChain(context);
+        return this.protectedChain(context, request);
       }
 
       case 'protected':
-        return this.protectedChain(context);
+        return this.protectedChain(context, request);
 
       case 'invalid':
         this.logger.error(
@@ -73,11 +74,16 @@ export class RouteAccessGuard implements CanActivate {
   }
 
   /**
-   * Replaced in C11 by access → active user → CSRF → IP and user rate limits → RBAC. CSRF and the
-   * limits belong after identity there (spec 1.3 step 5), so neither is checked here: the branch
-   * refuses every request anyway.
+   * Access → active user (both in the authenticator: 401 invalid_session, or 503 if the user
+   * can't be read). C11 continues with CSRF → IP and user rate limits → RBAC; CSRF and the limits
+   * belong after identity (spec 1.3 step 5), so neither is checked here: the branch still refuses
+   * every authenticated request.
    */
-  private protectedChain(context: ExecutionContext): never {
+  private async protectedChain(
+    context: ExecutionContext,
+    request: FastifyRequest,
+  ): Promise<never> {
+    await this.authenticator.authenticate(request);
     this.logger.warn(
       {
         category: 'authorization_chain',

@@ -40,8 +40,13 @@ const remember = <T extends string>(value: T): T => {
 
 const INACTIVE = ['pending', 'blocked', 'deleting', 'deleted'] as const;
 
+/**
+ * One capture for the whole file: nestjs-pino keeps the first app's root logger for the process,
+ * so every app below writes there, and each suite's leak check covers all of them.
+ */
+const logs = new LogCapture();
+
 describe('Login without confirmation (e2e)', () => {
-  const logs = new LogCapture();
   let app: NestFastifyApplication;
   let config: AppConfig;
 
@@ -439,7 +444,6 @@ describe('Login without confirmation (e2e)', () => {
 });
 
 describe('Login with OTP confirmation (e2e)', () => {
-  const logs = new LogCapture();
   let app: NestFastifyApplication;
   let config: AppConfig;
 
@@ -876,7 +880,6 @@ describe('Login with OTP confirmation (e2e)', () => {
 });
 
 describe('Login with magic-link confirmation (e2e)', () => {
-  const logs = new LogCapture();
   let app: NestFastifyApplication;
   let config: AppConfig;
 
@@ -966,20 +969,24 @@ describe('Login with magic-link confirmation (e2e)', () => {
 
 describe('Login confirmation when SMTP is down (e2e)', () => {
   let app: NestFastifyApplication;
+  let config: AppConfig;
 
   beforeAll(async () => {
-    ({ app } = await createTestApp({
+    ({ app, config } = await createTestApp({
+      logs,
       env: { LOGIN_EMAIL_CONFIRMATION_ENABLED: 'true', SMTP_PORT: '1' },
     }));
     await resetRateLimits(app);
   });
 
   afterAll(async () => {
+    logs.expectNoLeaks(config, sent);
     await app.close();
   });
 
   it('keeps the attempt and answers 503 with the safe fields and no secret', async () => {
     const user = await createUser(app);
+    remember(user.email);
 
     const res = await send(app, '/auth/login', {
       body: { email: user.email, password: PASSWORD },
@@ -1005,6 +1012,7 @@ describe('Login confirmation when SMTP is down (e2e)', () => {
 
   it('answers resend 503 too, keeping the new secret', async () => {
     const user = await createUser(app);
+    remember(user.email);
     const first = await send(app, '/auth/login', {
       body: { email: user.email, password: PASSWORD },
     });
@@ -1021,20 +1029,24 @@ describe('Login confirmation when SMTP is down (e2e)', () => {
 
 describe('Cross-site cookies (e2e)', () => {
   let app: NestFastifyApplication;
+  let config: AppConfig;
 
   beforeAll(async () => {
-    ({ app } = await createTestApp({
+    ({ app, config } = await createTestApp({
+      logs,
       env: { COOKIE_SAME_SITE: 'none', COOKIE_SECURE: 'true' },
     }));
     await resetRateLimits(app);
   });
 
   afterAll(async () => {
+    logs.expectNoLeaks(config, sent);
     await app.close();
   });
 
   it('sets SameSite=None; Secure on both cookies when COOKIE_SAME_SITE=none', async () => {
     const user = await createUser(app);
+    remember(user.email);
 
     const res = await send(app, '/auth/login', {
       body: { email: user.email, password: PASSWORD },

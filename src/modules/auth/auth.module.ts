@@ -4,6 +4,7 @@ import { ChallengesModule } from '@/modules/challenges/challenges.module';
 
 import { AccessAuthenticator } from './access-authenticator';
 import { AuthCookies } from './auth-cookies';
+import { LoginController } from './login.controller';
 import { LoginService } from './login.service';
 import { PasswordHasher } from './password-hasher';
 import { RegistrationController } from './registration.controller';
@@ -13,7 +14,7 @@ import { TokenService } from './tokens/token.service';
 
 @Module({
   imports: [ChallengesModule],
-  controllers: [RegistrationController],
+  controllers: [RegistrationController, LoginController],
   providers: [
     PasswordHasher,
     RegistrationService,

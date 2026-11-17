@@ -162,6 +162,7 @@ export const configSchema = Joi.object<AppConfig>({
     .required(),
   CORS_ORIGINS: originList(),
   COOKIE_SECURE: Joi.boolean().default(true),
+  COOKIE_SAME_SITE: Joi.string().valid('strict', 'none').default('strict'),
   READINESS_ALLOWED_IPS: ipList('127.0.0.1,::1'),
 
   /* PostgreSQL */
@@ -256,6 +257,11 @@ export function assertCrossFieldRules(config: AppConfig): void {
     errors.push(
       'USER_LIST_CURSOR_ACTIVE_KEY_ID is not present in USER_LIST_CURSOR_HMAC_KEYS',
     );
+  }
+
+  // Browsers drop a SameSite=None cookie that isn't Secure (spec 1.2: "SameSite=None; Secure").
+  if (config.COOKIE_SAME_SITE === 'none' && !config.COOKIE_SECURE) {
+    errors.push('COOKIE_SAME_SITE=none requires COOKIE_SECURE=true');
   }
 
   if (config.NODE_ENV === 'production') {

@@ -152,7 +152,7 @@ describe('verifyJwt()', () => {
   describe('expiry, with 30 s of tolerance', () => {
     it('accepts a token that expired less than 30 s ago', () => {
       const token = signJwt(
-        claims({ exp: NOW - CLOCK_TOLERANCE_SECONDS + 1 }),
+        claims({ iat: NOW - 900, exp: NOW - CLOCK_TOLERANCE_SECONDS + 1 }),
         SECRET,
       );
       expect(verifyJwt(token, SECRET, expected()).ok).toBe(true);
@@ -160,7 +160,7 @@ describe('verifyJwt()', () => {
 
     it('refuses a token that expired 30 s ago or more', () => {
       const token = signJwt(
-        claims({ exp: NOW - CLOCK_TOLERANCE_SECONDS }),
+        claims({ iat: NOW - 900, exp: NOW - CLOCK_TOLERANCE_SECONDS }),
         SECRET,
       );
       expect(verifyJwt(token, SECRET, expected())).toEqual({

@@ -1,5 +1,8 @@
 import type { DataSourceOptions } from 'typeorm';
 
+/** How long pg waits for a new connection before failing. */
+export const DB_CONNECT_TIMEOUT_MS = 5000;
+
 export interface DatabaseSettings {
   host: string;
   port: number;
@@ -60,5 +63,10 @@ export function buildDataSourceOptions(
     uuidExtension: 'pgcrypto',
     installExtensions: false,
     logging: settings.logging,
+    extra: {
+      // An unreachable server (dropped packets, not a refused connection) fails after 5 s instead
+      // of the OS timeout, so the request answers 503 promptly (spec 1.2: "503, not 401").
+      connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS,
+    },
   };
 }
