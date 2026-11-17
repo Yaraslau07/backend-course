@@ -129,7 +129,7 @@ email (cleartext), password, password hash, OTP, magic-link token, HMAC, JWT, `C
 
 - `access_token`: `HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=900`, no `Domain`.
 - `refresh_token`: `HttpOnly; Secure; SameSite=Strict; Path=/auth/refresh; Max-Age=2592000`, no `Domain`.
-- For a cross-site frontend: `SameSite=None; Secure`. Tokens never appear in a body, a JS-readable header or a URL.
+- For a cross-site frontend: `SameSite=None; Secure`, switched on with `COOKIE_SAME_SITE=none` (D42). Tokens never appear in a body, a JS-readable header or a URL.
 - JWT: HS256 only, separate secrets, claims `sub iss aud iat exp token_use`, 30 s clock tolerance, no `jti`, roles or PII.
 
 ## Background work

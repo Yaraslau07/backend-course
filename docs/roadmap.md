@@ -13,8 +13,8 @@ The order the assignment is being built in, and why. Update the status column as
 | C6. MailService | 1b | 1.0, 1.2, 1.5, 1.6 | ✅ done |
 | C7. Email challenge engine | 1c | 1.0, 1.2, 1.5, 1.6 | ✅ done |
 | C8. Registration | 1c | 1.0 | ✅ done |
-| C9. Authentication | 1c | 1.2 | ⏭ next |
-| C10. RBAC | 1c | 1.1 | pending |
+| C9. Authentication | 1c | 1.2 | ✅ done |
+| C10. RBAC | 1c | 1.1 | ⏭ next |
 | C11. Authorization chain | 1c | 1.3 | pending |
 | C12. View and list | 2 | 1.4, 1.7 | pending |
 | C13. Update | 2 | 1.5 | pending |
@@ -146,7 +146,7 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
 
    It's reused by registration, login, email change and deletion, which makes it the biggest single time saver. A pattern to borrow is the email verification service in touch-grass-back, reworked for HMAC, attempt ids, `consumed_reason` and the 5th-attempt rule.
 2. ✅ **Registration** (spec 1.0; C8, D40–D41): argon2 hashing, the password policy (over-long input is rejected), 201 or 202, the 409 on a duplicate email.
-3. **Authentication** (spec 1.2):
+3. ✅ **Authentication** (spec 1.2; C9, D42–D43):
    - login with exactly one argon2 verify per attempt (a dummy hash for unknown users) and the optional email step
    - stateless HS256 access and refresh JWTs with separate secrets, `token_use`, 30 s tolerance and cookies
    - refresh, logout

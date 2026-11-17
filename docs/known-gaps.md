@@ -10,10 +10,9 @@ A running list of what's still outstanding. Check it before assuming something i
 - No entity is registered with a Nest module yet (`TypeOrmModule.forFeature`); each feature does that when it first needs a repository.
 
 ## Phase 1 framework pieces (deliberately not in Phase 0)
-- **Protected routes fail closed** (D25): until the authorization chain lands in C11, every `@RequirePermission` route answers `503 authorization_unavailable`, and so does a receipt route called without its header.
+- **Protected routes fail closed after authentication** (D25, D43): until the authorization chain lands in C11, every `@RequirePermission` route (and a receipt route called without its header) checks the access cookie (`401 invalid_session`), then answers `503 authorization_unavailable`.
 - **CSRF on protected routes** runs after identity, so it arrives with the chain in C11 (D28). Public writes are checked now.
-- **Cross-site cookies:** for a frontend on another site, both auth cookies need `SameSite=None; Secure` (spec 1.2). That is a cookie attribute, set where cookies are issued (C9).
-- **Rate limits are in place, but mostly unused yet:** each policy is applied by the checkpoint that adds its route (registration C8, login and refresh C9, …). User-keyed ones start working with the protected chain in C11.
+- **Rate limits are in place, but partly unused yet:** each policy is applied by the checkpoint that adds its route (registration C8, login and refresh C9, …). User-keyed ones start working with the protected chain in C11.
 
 ## Infrastructure
 - No CD. The course only requires a service called through an HTTP client.
@@ -30,8 +29,12 @@ A running list of what's still outstanding. Check it before assuming something i
 ## Registration
 - Activation assigns no `user` role until RBAC exists (C10); the bootstrap then gives it to every active user without roles (spec 1.0 and 1.1).
 
+## Authentication
+- **Sessions are stateless (spec 1.2):** a refresh token can't be revoked before its 30-day `exp`, and reuse after rotation isn't detected. Blocking or deleting the user is the only way to end a session early, because every token is checked against the user's current status.
+- **Key rotation:** `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` are single keys. Changing one signs everyone out of that kind of token; there is no key ring like the user-list cursor has.
+
 ## Email challenges
-- Registration uses the engine (C8); login (C9), email change (C13) and deletion (C14) wire it in next.
+- Registration (C8) and login (C9) use the engine; email change (C13) and deletion (C14) wire it in next.
 - `resend_cooldown` is a 429 like the spec says; the 5-emails-per-user-per-hour limits for email change and deletion (`email_change_emails`, `deletion_challenge_emails`) are applied by those flows, not the engine.
 
 ## Mail
@@ -40,7 +43,7 @@ A running list of what's still outstanding. Check it before assuming something i
 - nodemailer is pinned to 10.3.1 (D36); newer 10.x releases exist.
 
 ## Errors
-- The pg pool has no `connectionTimeoutMillis`, so with Postgres unreachable but not refusing connections (a dropped network rather than a stopped server), a query can wait on the OS timeout instead of failing fast as a 503. To set in C9, where "DB down → 503, not 401" is tested.
+- There is no per-query timeout: a connection attempt gives up after 5 s (D43), but a query on a live connection to a stalled server can still wait. "DB down → 503, not 401" is covered by unit tests with a failing fake, not by stopping Postgres in e2e.
 - A body sent to a route that doesn't exist is still parsed first, so malformed JSON to a missing route answers `400 invalid_json`, not `404`.
 - `text/plain` bodies are still accepted by Fastify's built-in parser and then fail DTO validation (`400`), rather than being refused with `415`.
 
