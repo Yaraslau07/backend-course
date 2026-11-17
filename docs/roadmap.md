@@ -16,7 +16,7 @@ The order the assignment is being built in, and why. Update the status column as
 | C9. Authentication | 1c | 1.2 | ✅ done |
 | C10. RBAC | 1c | 1.1 | ✅ done |
 | C11. Authorization chain | 1c | 1.3 | ✅ done |
-| C12. View and list | 2 | 1.4, 1.7 | ⏭ next |
+| C12. View and list | 2 | 1.4, 1.7 | ⏳ implemented; awaiting PR review/merge |
 | C13. Update | 2 | 1.5 | pending |
 | C14. Delete | 2 | 1.6 | pending |
 | C15. Transformation framework | 3 | 2.0 | pending |
@@ -163,7 +163,7 @@ Specs to read: 1.0, 1.1, 1.2, 1.5, 1.6 (the schema-related parts) and `docs/inva
 
 The three features are independent of each other, but are built in order (C12 → C13 → C14), each merged before the next starts.
 
-- **2a. View and list** (specs 1.4 and 1.7): the safe profile projector, `GET /users/{id}`, the photo download, `GET /admin/users` with the HMAC keyset cursor and key ring.
+- **2a. View and list** (specs 1.4 and 1.7; C12 implemented, D51): the safe profile projector, `GET /users/{id}`, the protected photo stream, `GET /admin/users` with the HMAC keyset cursor and key ring. Search/order indexes and the read/delete storage port are in place. Local reads work in development/test; production S3 and uploads arrive in C13.
 - **2b. Update** (spec 1.5):
   - PATCH with a field whitelist (self and admin)
   - email change through the challenge engine

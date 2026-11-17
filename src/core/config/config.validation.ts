@@ -212,6 +212,7 @@ export const configSchema = Joi.object<AppConfig>({
     .default(300),
 
   /* SMTP */
+  STORAGE_LOCAL_ROOT: Joi.string().min(1).default('.storage'),
   SMTP_HOST: Joi.string().hostname().required(),
   SMTP_PORT: Joi.number().port().required(),
   SMTP_SECURE: Joi.boolean().default(false),

@@ -1,4 +1,11 @@
-import { Check, Column, Entity, PrimaryGeneratedColumn, Unique } from 'typeorm';
+import {
+  Check,
+  Column,
+  Entity,
+  Index,
+  PrimaryGeneratedColumn,
+  Unique,
+} from 'typeorm';
 
 import { timestampNow } from '../../../database/columns';
 
@@ -14,6 +21,13 @@ import { USER_STATUSES, type UserStatus } from '../users.types';
  * so every write sets it explicitly with `now()`.
  */
 @Entity('users')
+@Index('idx_users_created_at_id', ['createdAt', 'id'])
+@Index('idx_users_id_created_at', ['id', 'createdAt'])
+@Index('idx_users_status_created_at_id', ['status', 'createdAt', 'id'])
+@Index('idx_users_status_id_created_at', ['status', 'id', 'createdAt'])
+// Expression/opclass indexes are owned by the migration; TypeORM cannot describe them.
+@Index('idx_users_email_prefix', { synchronize: false })
+@Index('idx_users_display_name_prefix', { synchronize: false })
 @Unique('uq_users_email', ['email'])
 // The app normalizes (trim, lowercase) before writing; the database only refuses what is certainly wrong.
 @Check(

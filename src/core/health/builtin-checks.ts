@@ -44,6 +44,13 @@ export class BuiltinReadinessChecks implements OnModuleInit {
       return { down: 'invalid_key' };
     if (!ring.some((k) => k.kid === activeKid))
       return { down: 'cursor_active_kid' };
+    if (new Set(ring.map((k) => k.kid)).size !== ring.length)
+      return { down: 'cursor_duplicate_kid' };
+    if (
+      new Set(keys.map((key) => Buffer.from(key, 'base64url').toString('hex')))
+        .size !== keys.length
+    )
+      return { down: 'duplicate_key' };
     return 'up';
   }
 }
