@@ -516,3 +516,22 @@ Other choices:
 ## D77: History retention (2026-11-18)
 
 `TransformationRetention` deletes rows older than `TRANSFORMATION_HISTORY_RETENTION_DAYS` (default 90). It runs every 10 minutes outside tests, in batches of 500 through the new `idx_transformations_created_at`, at most 20 batches per sweep, and never overlaps itself. Spec 2.4 (C19) will delete a stored object before its row; until then rows have no objects.
+
+## D78: Audit of C14–C18 against specs 1.6 and 2.0–2.3 (2026-11-18)
+
+After C18 merged, the author asked for every checkpoint of the session to be checked against its spec again. Each section's rules (contract steps, the §1.4 error list, §1.5 logging, §1.6 non-functional requirements) were walked against the code and tests. Result: everything the specs require is implemented and tested, except one gap and one small difference recorded below. Everything else that differs from a literal reading is an explicit author choice or a recorded decision.
+
+**Gap found (to close in C19):**
+- **Spec 2.2 §1.5 asks the conversion log to carry the image's final dimensions** ("input and result size, final sizes"). The `transformation` event logs byte sizes but not width × height. The image converter computes them (`ConvertedImage.width/height`), but the converter contract (D67) doesn't pass them back. Fix: an optional `width`/`height` in `ConverterOutcome`, validated in the worker and logged by the service. This is logging only; history (spec 2.3 §1.3.4) has no dimension fields.
+
+**Small difference, recorded rather than changed:**
+- **Admin and self deletion run the global last-manager check for every target** (`assertRbacManagerRemains()` after the roles are removed). Specs 1.6 §1.3.2 step 9 and §1.3.3 step 8 run it only when the target holds `rbac@manage`. While the invariant holds (at least one active holder exists), both give the same answer, because removing a non-holder can't remove the last holder. They differ only if the database already has no active holder, which no API path can produce (D45, D52). Then this code refuses every deletion with 409 rather than allowing ones that don't touch a holder.
+
+**Deliberate readings, already decided (no change):**
+- Spec 1.6: a confirm replay is answered before the session check (D57); a malformed receipt is 404 (D58); receipt user ids compare case-insensitively like ownership (D64, amending "exact match"); a malformed `Idempotency-Key` on confirm is checked after the guard (D57, following D51).
+- Spec 2.0: history rows start once the pair is known (D65).
+- Spec 2.1: single-key XML root, `rows/row` only for XML → CSV, values stay strings, octet-stream accepted, unparsable content is 400 rather than 415 (D70).
+- Spec 2.2: oversize is 413, both SVG dimensions are exact, APNG is refused, `data:` URIs are refused (D73, D74).
+- Spec 2.3: query validation follows the permission (D51 order); the cursor isn't signed (D76).
+
+**Waiting for spec 2.4 (C19), as each spec allows:** `save=true` is validated but not acted on, `X-Save-Status` isn't sent, history storage fields are fixed (`not_requested`), and the eraser and retention don't touch stored objects yet.

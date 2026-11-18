@@ -20,6 +20,7 @@ A running list of what's still outstanding. Check it before assuming something i
 - List queries warn at 500 ms and are cancelled by Postgres at 2 seconds. Automatic EXPLAIN/production plan monitoring is not configured; composite range and prefix indexes are supplied by the migration.
 
 ## User deletion (C14)
+- The last-manager check runs for every deletion target, not only `rbac@manage` holders. The result is identical while any active holder exists, which the API guarantees (D78).
 - A self confirmation with a malformed key, or a key that has no job yet, runs the full chain before validation, so its 400 comes after 401/403 (D57). A replay with a valid key skips the chain.
 - Anonymization doesn't touch `rate_limits` rows: their keys are HMACs of the user id, never the id itself, and they expire with their window.
 - A `failed` job stays failed until an admin repeats `DELETE`; nothing alerts on it. Watch `deletion_job_failed` events.
@@ -43,6 +44,7 @@ A running list of what's still outstanding. Check it before assuming something i
 - During C16's gate, `users-read.e2e-spec.ts` (C12) failed once, right after a run in which the host stalled for several minutes. It passed in the 16 full runs that followed and couldn't be reproduced. Its timing-sensitive tests (the 2-second SQL timeout, the lock-wait check) are the likely cause.
 
 ## Image conversion (C17)
+- **The conversion log doesn't carry the image's final width × height** (spec 2.2 §1.5, "final sizes"); it logs byte sizes only. Found in the D78 audit and scheduled for C19: the converter contract needs an optional `width`/`height`.
 - **Text in SVGs:** the Alpine image ships no system fonts, so resvg draws no text. Shapes, paths and gradients render; `<text>` doesn't. Installing a font package in the Dockerfile would fix it.
 - `data:` URIs inside SVGs are refused (D74), so an SVG that embeds a bitmap as a data URI can't be converted.
 - The SVG check is structural (elements, attributes, `url()`, `@import`). CSS escape tricks could in principle hide a `url()` from it; resvg never fetches anything and every external reference is refused, so this is defence in depth.
