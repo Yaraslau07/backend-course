@@ -18,7 +18,7 @@ The order the assignment is being built in, and why. Update the status column as
 | C11. Authorization chain | 1c | 1.3 | ✅ done |
 | C12. View and list | 2 | 1.4, 1.7 | ✅ done (PR #13) |
 | C13. Update | 2 | 1.5 | ✅ done (PR #14) |
-| C14. Delete | 2 | 1.6 | ⏳ PR open; awaiting review/merge |
+| C14. Delete | 2 | 1.6 | ⏳ PR #15; awaiting review/merge |
 | C15. Transformation framework | 3 | 2.0 | ⏭ next (after C14 merges) |
 | C16. Text | 3 | 2.1 | pending |
 | C17. Images | 3 | 2.2 | pending |
