@@ -10,7 +10,14 @@ import type { RbacAuthorizer } from '@/modules/rbac/rbac-authorizer';
 
 import { CsrfPolicy } from './csrf';
 
-import { Internal, Public, Receipt, RequirePermission } from './route-access';
+import { IdempotentReplays, type ReplayVerdict } from './idempotent-replay';
+import {
+  Internal,
+  Public,
+  Receipt,
+  Replay,
+  RequirePermission,
+} from './route-access';
 import { RouteAccessGuard } from './route-access.guard';
 
 class Handlers {
@@ -53,6 +60,14 @@ class Handlers {
   @Receipt('Deletion-Receipt')
   @RequirePermission('users', 'delete')
   receiptOrPair() {}
+
+  @RequirePermission('users', 'delete')
+  @Replay('probe_replay')
+  replayable() {}
+
+  @RequirePermission('users', 'delete')
+  @Replay('unregistered_replay')
+  replayWithoutMatcher() {}
 
   undeclared() {}
 
@@ -105,18 +120,68 @@ describe('RouteAccessGuard', () => {
   const authenticator = { authenticate } as unknown as AccessAuthenticator;
   const authorize = jest.fn<Promise<void>, [string, string, string]>();
   const authorizer = { authorize } as unknown as RbacAuthorizer;
-  const guard = new RouteAccessGuard(csrf, limiter, authenticator, authorizer);
+  const replays = new IdempotentReplays();
+  const verdict = jest.fn<Promise<ReplayVerdict>, [unknown]>();
+  replays.register('probe_replay', verdict);
+  const guard = new RouteAccessGuard(
+    csrf,
+    limiter,
+    authenticator,
+    authorizer,
+    replays,
+  );
   const USER = '3f2b8f0e-6a1d-4c8e-9a51-0d7f6b2c1e44';
 
   beforeEach(() => {
     enforce.mockReset().mockResolvedValue(undefined);
     authenticate.mockReset().mockResolvedValue(USER);
     authorize.mockReset().mockResolvedValue(undefined);
+    verdict.mockReset().mockResolvedValue('none');
     jest.spyOn(Logger.prototype, 'error').mockImplementation();
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();
   });
 
   afterEach(() => jest.restoreAllMocks());
+
+  describe('idempotent replay (spec 1.6 §1.3.2 step 2)', () => {
+    it('answers a recognised replay before the session check, with CSRF and IP limits', async () => {
+      verdict.mockResolvedValueOnce('replay');
+      expect(
+        await guard.canActivate(contextFor('replayable', {}, 'http', 'POST')),
+      ).toBe(true);
+      expect(authenticate).not.toHaveBeenCalled();
+      expect(authorize).not.toHaveBeenCalled();
+    });
+
+    it('refuses a key that belongs to another target with 409, and a cross-origin replay with 403', async () => {
+      verdict.mockResolvedValueOnce('conflict');
+      expect(
+        await rejection(() =>
+          guard.canActivate(contextFor('replayable', {}, 'http', 'POST')),
+        ),
+      ).toBe('idempotency_conflict');
+      verdict.mockResolvedValueOnce('replay');
+      expect(
+        await rejection(() =>
+          guard.canActivate(contextFor('replayable', EVIL, 'http', 'POST')),
+        ),
+      ).toBe('csrf_rejected');
+      expect(authenticate).not.toHaveBeenCalled();
+    });
+
+    it('runs the full chain when the matcher finds nothing or is not registered', async () => {
+      expect(await guard.canActivate(contextFor('replayable'))).toBe(true);
+      expect(await guard.canActivate(contextFor('replayWithoutMatcher'))).toBe(
+        true,
+      );
+      expect(authenticate).toHaveBeenCalledTimes(2);
+      expect(authorize).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses a second matcher under the same name', () => {
+      expect(() => replays.register('probe_replay', verdict)).toThrow();
+    });
+  });
 
   it('lets public and internal routes through without any session', async () => {
     expect(await guard.canActivate(contextFor('publicRoute'))).toBe(true);

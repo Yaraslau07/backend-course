@@ -70,6 +70,7 @@ export function emailInput(raw: unknown): string {
 export function challengeInput(
   raw: unknown,
   resend = false,
+  scenario: 'email_change' | 'deletion' = 'email_change',
 ): { challengeId: string; code?: string } | { token: string } {
   const input = objectInput(
     raw,
@@ -80,7 +81,7 @@ export function challengeInput(
     Object.keys(input).length === 1 &&
     typeof input.token === 'string' &&
     input.token.length <= 200 &&
-    parseToken('email_change', input.token)
+    parseToken(scenario, input.token)
   )
     return { token: input.token };
   if (

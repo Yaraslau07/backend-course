@@ -19,8 +19,39 @@ const internal = { kind: 'internal' } as const;
 const pair = (permission: string, action: string) =>
   ({ kind: 'permission', permission, action }) as const;
 const receipt = (header: string) => ({ kind: 'receipt', header }) as const;
+const replay = (name: string) => ({ kind: 'replay', name }) as const;
 
 describe('resolveRouteAccess()', () => {
+  it('one pair with one replay is protected with that replay matcher', () => {
+    expect(
+      resolveRouteAccess([pair('users', 'delete'), replay('deletion_confirm')]),
+    ).toEqual({
+      kind: 'protected',
+      permission: 'users',
+      action: 'delete',
+      replay: 'deletion_confirm',
+    });
+  });
+
+  it.each([
+    ['a replay alone', [replay('x')]],
+    ['two replays', [pair('a', 'b'), replay('x'), replay('y')]],
+    ['a replay with a receipt', [pair('a', 'b'), replay('x'), receipt('R')]],
+    ['a replay on a public route', [pub, replay('x')]],
+  ])('%s is a conflict', (_name, declarations) => {
+    expect(resolveRouteAccess(declarations)).toEqual({
+      kind: 'invalid',
+      reason: 'conflict',
+    });
+  });
+
+  it('a replay name outside the RBAC pattern is invalid_name', () => {
+    expect(resolveRouteAccess([pair('a', 'b'), replay('Bad Name')])).toEqual({
+      kind: 'invalid',
+      reason: 'invalid_name',
+    });
+  });
+
   it('a route with no declaration is invalid (missing)', () => {
     expect(resolveRouteAccess(undefined)).toEqual({
       kind: 'invalid',

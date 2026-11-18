@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { AppException } from '@/core/errors/app.exception';
+import { logsIds } from '@/core/logging/id-redaction';
 import { RbacAuthorizer } from '@/modules/rbac/rbac-authorizer';
 
 /** Whether the request acts on the caller's own resource (spec 1.4 §1.5: `self` or `foreign`). */
@@ -41,7 +42,7 @@ export class Ownership {
         event: 'ownership',
         result: 'denied',
         category: 'ownership_denied',
-        actorUserId,
+        ...(logsIds(operation) ? { actorUserId } : {}),
         operation,
         permission,
         action: anyAction,
@@ -63,7 +64,7 @@ export class Ownership {
         event: 'ownership',
         result: 'denied',
         category: 'ownership_denied',
-        actorUserId,
+        ...(logsIds(operation) ? { actorUserId } : {}),
         operation,
       },
       'resource of another user refused',

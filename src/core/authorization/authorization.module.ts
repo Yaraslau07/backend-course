@@ -5,6 +5,7 @@ import { AuthModule } from '@/modules/auth/auth.module';
 import { RbacModule } from '@/modules/rbac/rbac.module';
 
 import { CsrfPolicy } from './csrf';
+import { IdempotentReplays } from './idempotent-replay';
 import { Ownership } from './ownership';
 import { RouteAccessGuard } from './route-access.guard';
 import { RouteDeclarationScanner } from './route-scan';
@@ -14,10 +15,11 @@ import { RouteDeclarationScanner } from './route-scan';
   providers: [
     CsrfPolicy,
     Ownership,
+    IdempotentReplays,
     RouteDeclarationScanner,
     { provide: APP_GUARD, useClass: RouteAccessGuard },
   ],
   // Feature modules import this module for the ownership step in their handlers.
-  exports: [Ownership],
+  exports: [Ownership, IdempotentReplays],
 })
 export class AuthorizationModule {}

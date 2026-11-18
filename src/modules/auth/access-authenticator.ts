@@ -5,6 +5,7 @@ import { DataSource } from 'typeorm';
 
 import { ACCESS_COOKIE } from '@/core/app/configure-app';
 import { AppException } from '@/core/errors/app.exception';
+import { logsIds } from '@/core/logging/id-redaction';
 import { classifyDbError } from '@/core/errors/db-errors';
 
 import { AuthCookies } from './auth-cookies';
@@ -36,7 +37,10 @@ export class AccessAuthenticator {
    * absent or non-active user (one answer for all). If the user can't be read, `503
    * authorization_unavailable` (spec 1.3), never a 401.
    */
-  async authenticate(request: FastifyRequest): Promise<string> {
+  async authenticate(
+    request: FastifyRequest,
+    operation?: string,
+  ): Promise<string> {
     const checked = this.tokens.verify(
       'access',
       this.cookies.read(request, ACCESS_COOKIE),
@@ -64,7 +68,8 @@ export class AccessAuthenticator {
       );
       throw new AppException('authorization_unavailable');
     }
-    if (rows[0]?.status !== 'active') this.refuse('user_inactive', userId);
+    if (rows[0]?.status !== 'active')
+      this.refuse('user_inactive', logsIds(operation) ? userId : undefined);
 
     request.authUserId = userId;
     return userId;

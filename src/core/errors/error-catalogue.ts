@@ -66,6 +66,14 @@ export const ERROR_CATALOGUE = {
     status: 409,
     message: 'This role already has a grant for this permission.',
   },
+  idempotency_conflict: {
+    status: 409,
+    message: 'This idempotency key is already used for another target.',
+  },
+  deletion_exists: {
+    status: 409,
+    message: 'A deletion is already in progress for this account.',
+  },
   last_rbac_manager: {
     status: 409,
     message: 'This change would leave no active user able to manage access.',
