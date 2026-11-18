@@ -18,6 +18,7 @@ import { RbacModule } from '@/modules/rbac/rbac.module';
 import { UsersModule } from '@/modules/users/users.module';
 import { TransformationsModule } from '@/modules/transformations/transformations.module';
 import { TextConversionModule } from '@/modules/text-conversion/text-conversion.module';
+import { ImageConversionModule } from '@/modules/image-conversion/image-conversion.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { TextConversionModule } from '@/modules/text-conversion/text-conversion.
     UsersModule,
     TransformationsModule,
     TextConversionModule,
+    ImageConversionModule,
     AuthModule,
   ],
 })

@@ -77,6 +77,11 @@ export interface AppConfig {
   TEXT_YAML_MAX_BYTES: number;
   /** Spec 2.1 §1.1: 30 seconds. */
   TEXT_CONVERSION_TIMEOUT_MS: number;
+  /** Spec 2.2 §1.1: input limit per image format (default 10 MiB each), and the timeout. */
+  IMAGE_PNG_MAX_BYTES: number;
+  IMAGE_JPEG_MAX_BYTES: number;
+  IMAGE_SVG_MAX_BYTES: number;
+  IMAGE_CONVERSION_TIMEOUT_MS: number;
 
   /** Single-instance development/test storage; production uses S3. */
   STORAGE_LOCAL_ROOT: string;

@@ -467,3 +467,38 @@ Spec 2.1 §1.3.2 leaves four rules open. The author chose:
 - `TEXT_CSV_MAX_BYTES`, `TEXT_JSON_MAX_BYTES`, `TEXT_XML_MAX_BYTES` and `TEXT_YAML_MAX_BYTES` default to 10 MiB (spec 2.1 §1.1). The result limit is a fixed 50 MiB. `TEXT_CONVERSION_TIMEOUT_MS` defaults to 30 s and is configurable, so tests can prove the 504 and operators can tune it.
 - `targetFormat` must be one of the four and differ from the source, which comes from the extension (`.yml` is YAML); otherwise 400. `save` must be `true` or `false` (400 otherwise) and is accepted now, but saving itself arrives with spec 2.4 (C19).
 - Each converter reads the whole input (at most its limit) and builds the result in memory inside its worker thread, then writes it at once. The worker's byte limit refuses an oversized result (413) without returning anything partial.
+
+## D73: Image rules chosen by the author, and the defaults around them (2026-11-18)
+
+Spec 2.2 leaves three behaviours open. The author chose:
+- **Oversize is 413.** A result over 4096 px per side or 16,777,216 px is `413 payload_too_large` with history `result_too_large`. That covers a PNG/JPEG input that big, an SVG's own size, or a size derived from one option. Nothing is resized behind the client's back. An explicit `width`/`height` outside 1–4096 is still a 400 option error. A raster's size is read from its header and checked before decoding.
+- **Both SVG dimensions mean exactly that size.** The drawing is stretched to `width × height`. One dimension keeps the aspect ratio (spec), and none uses the intrinsic size.
+- **Animated PNGs are refused** (`unsafe_input`, 400), like profile photos (D54): the `acTL` chunk before `IDAT` marks an APNG, whose frames libvips can't all read.
+
+Other choices:
+- The EXIF orientation is applied (`rotate()`) and then every bit of metadata is dropped, because sharp writes none unless asked. A sideways photo stays upright without its EXIF (spec 2.2 §1.6).
+- A `.png` / `.jpg` / `.jpeg` upload must carry its signature (`content_mismatch`, 415). A damaged file or a decoder warning (`failOn: 'warning'`, as in D53) is `invalid_input` (400).
+- MIME types: each format's own types plus `application/octet-stream`, as in D70; `text/plain` is not accepted for images.
+- A direction outside the four (to SVG, to itself, to anything else) is 415 (spec 2.2 §1.4: "format or direction is not supported"). Spec 2.1's same-format rule is a 400, because its validation table says so.
+- The JPEG result is named `converted.jpeg`, matching `targetFormat`.
+
+## D74: SVG safety and sizing (2026-11-18)
+
+- **Safety (spec 2.2 §1.3.3):**
+  - Any `<!DOCTYPE` / `<!ENTITY` is refused before parsing (as for XML in D71). The document must validate, decode as strict UTF-8 and have exactly one root, `svg`; any other root is `content_mismatch`.
+  - A full walk refuses `script`, `foreignObject`, `iframe`, `embed`, `object`, `audio`, `video`, `canvas`, `handler` and `listener` (any case or prefix). It also refuses any `on*` attribute and any `href`/`src` (including `xlink:href`) that isn't a same-document `#id`.
+  - CSS is refused if it contains `@import` or a `url()` that isn't `#id`, whether in an attribute, a `style` attribute or a `<style>` element.
+  - `data:` URIs are refused too: they aren't external, but they embed documents this check never sees.
+- **The renderer is resvg 2.6.2:** no network and no scripts. With every reference refused, it never reads a local file either.
+- **Intrinsic size:**
+  - An absolute `width` and `height`, or a valid `viewBox`, is the intrinsic size.
+  - Without one, resvg would fall back to the drawing's bounding box, so the document is nested in a 1024×1024 outer `<svg>`. Percentages then resolve against 1024, the spec's default, and no attribute is rewritten.
+  - The final size is computed and checked against the limits before anything is rasterised.
+- **Rendering:** resvg renders at a single zoom of at least one pixel per side, then sharp stretches to the exact size. A requested shape far from the drawing's (say 4096 × 2 for a tall SVG) never makes a sub-pixel or oversized intermediate; a zoom whose intermediate would pass the pixel limit is `result_too_large`.
+- **Output:** a PNG keeps transparency; a JPEG is flattened onto `background` (default `#ffffff`) at `quality` (default 85).
+
+## D75: Image limits and timeouts (2026-11-18)
+
+- `IMAGE_PNG_MAX_BYTES`, `IMAGE_JPEG_MAX_BYTES` and `IMAGE_SVG_MAX_BYTES` default to 10 MiB, and `IMAGE_CONVERSION_TIMEOUT_MS` to 30 s (spec 2.2 §1.1). The byte cap on a result (100 MiB) is only a backstop; the pixel limit is the real bound.
+- sharp gets its own timeout, one second before the pool's (minimum 1 s), so a slow encode usually stops cleanly with history `timeout` before piscina terminates the thread. resvg renders synchronously and can't be interrupted mid-render, so the pixel limit is what bounds it.
+- `options` is a JSON object, at most 1 KiB like every field. `quality` (1–100) and `background` (`#RRGGBB`, stored lowercase) apply only to a JPEG result; `width`/`height` (1–4096) only to an SVG source. Unknown or inapplicable fields are 400.

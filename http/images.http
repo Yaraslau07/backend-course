@@ -1,0 +1,79 @@
+# C17 (spec 2.2). Sign in with auth.http first: the HTTP client keeps the access cookie.
+# Needs transformations@convert. PNG/JPEG files are easiest to send with curl, for example:
+#   curl -b cookies -F targetFormat=jpeg -F 'options={"quality":80}' -F file=@photo.png \
+#     http://localhost:3007/api/images/convert -o converted.jpeg
+
+### The four pairs: 200
+GET {{baseUrl}}/api/images/convert/formats
+
+### SVG → PNG at width 800 (the height keeps the aspect ratio)
+POST {{baseUrl}}/api/images/convert
+Content-Type: multipart/form-data; boundary=b
+
+--b
+Content-Disposition: form-data; name="targetFormat"
+
+png
+--b
+Content-Disposition: form-data; name="options"
+
+{"width": 800}
+--b
+Content-Disposition: form-data; name="file"; filename="logo.svg"
+Content-Type: image/svg+xml
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><circle cx="25" cy="25" r="20" fill="#e33"/></svg>
+--b--
+
+### SVG → JPEG on black at quality 60
+POST {{baseUrl}}/api/images/convert
+Content-Type: multipart/form-data; boundary=b
+
+--b
+Content-Disposition: form-data; name="targetFormat"
+
+jpeg
+--b
+Content-Disposition: form-data; name="options"
+
+{"quality": 60, "background": "#000000"}
+--b
+Content-Disposition: form-data; name="file"; filename="logo.svg"
+Content-Type: image/svg+xml
+
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"><circle cx="25" cy="25" r="20" fill="#e33"/></svg>
+--b--
+
+### An SVG with a script: 400 invalid_file
+POST {{baseUrl}}/api/images/convert
+Content-Type: multipart/form-data; boundary=b
+
+--b
+Content-Disposition: form-data; name="targetFormat"
+
+png
+--b
+Content-Disposition: form-data; name="file"; filename="evil.svg"
+Content-Type: image/svg+xml
+
+<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>
+--b--
+
+### An option that doesn't apply (quality for a PNG result): 400
+POST {{baseUrl}}/api/images/convert
+Content-Type: multipart/form-data; boundary=b
+
+--b
+Content-Disposition: form-data; name="targetFormat"
+
+png
+--b
+Content-Disposition: form-data; name="options"
+
+{"quality": 80}
+--b
+Content-Disposition: form-data; name="file"; filename="logo.svg"
+Content-Type: image/svg+xml
+
+<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>
+--b--

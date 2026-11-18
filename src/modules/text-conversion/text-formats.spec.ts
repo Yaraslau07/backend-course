@@ -41,7 +41,7 @@ const CSV =
 
 describe('decodeUtf8() (spec 2.1 §1.1)', () => {
   it('strips one leading BOM and keeps everything else', () => {
-    expect(decodeUtf8(Buffer.from('﻿a﻿', 'utf8'))).toBe('a﻿');
+    expect(decodeUtf8(Buffer.from('\uFEFFa\uFEFF', 'utf8'))).toBe('a\uFEFF');
   });
 
   it('refuses bytes that are not UTF-8', () => {

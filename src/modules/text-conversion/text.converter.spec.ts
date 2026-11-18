@@ -18,7 +18,7 @@ describe('text converter (worker side)', () => {
     const out = sink();
     expect(
       await converter.convert(
-        Readable.from([Buffer.from('﻿a,b\n'), Buffer.from('1,2\n')]),
+        Readable.from([Buffer.from('\uFEFFa,b\n'), Buffer.from('1,2\n')]),
         { source: 'csv', target: 'json' },
         out.stream,
       ),
