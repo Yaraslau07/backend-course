@@ -103,6 +103,30 @@ One row per user being deleted (spec 1.6).
 
 `idx_deletion_jobs_claim (status, next_attempt_at, lease_until)` is what the worker claims through.
 
+## transformations
+
+One finished transformation (spec 2.0 §1.3.3; C15, D65, D69). Only safe metadata: no content, file name, temporary path or library message.
+
+| Column | Notes |
+|---|---|
+| `id` | uuid; the `transformationId` / `X-Transformation-Id` |
+| `user_id` | → `users` (`fk_transformations_user`); rows are erased before the user is anonymized |
+| `type` | `transformation_type`: `file` (2.1) or `image` (2.2) |
+| `source_format`, `target_format` | text, `^[a-z0-9]{1,16}$` and different (`ck_transformations_formats`); text, not an enum, so a new pair needs no migration |
+| `status` | `transformation_status`: `success` or `error` |
+| `input_size`, `output_size` | bigint bytes; `output_size` only on success |
+| `duration_ms` | integer |
+| `error_code` | a safe converter code (`ck_transformations_error_code`), only on error |
+| `created_at` | timestamptz(3) |
+
+| Constraint | Rule |
+|---|---|
+| `ck_transformations_outcome` | `success` has an output size and no error code; `error` has a code and no output size |
+| `ck_transformations_sizes` | sizes and duration are non-negative |
+| `idx_transformations_user_created_at_id` | spec 2.0 §1.6 and 2.3's keyset order (`created_at DESC, id DESC` walks it backwards) |
+
+Storage columns (`storage_status`, `stored_file_key`, `stored_file_until`) arrive with spec 2.4 (C19).
+
 ## storage_cleanup_jobs
 
 "Delete this object", written in the same transaction that drops the reference (spec 1.5).

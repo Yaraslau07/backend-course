@@ -68,6 +68,7 @@ access cookie → current user is `active` → CSRF (cross-origin writes) → IP
 | 403 | `csrf_rejected` | cross-origin write without an exact Origin and `X-CSRF-Protection: 1` |
 | 403 | `self_confirmation_required` | admin `DELETE /users/{own id}` |
 | 400 | `invalid_cursor` | any cursor problem, no details |
+| 400 | `invalid_file` | a conversion input is damaged, unsafe or doesn't fit the target (D68) |
 | 400 | `invalid_challenge` | challenge not found, expired, wrong secret, replaced, confirmed or consumed as `user_inactive` |
 | 409 | `email_taken` | registration of an email that exists, `pending` included |
 | 409 | `challenge_conflict` | challenge consumed as `admin_override`, `email_conflict` or `job_exists` |
@@ -144,6 +145,8 @@ email (cleartext), password, password hash, OTP, magic-link token, HMAC, JWT, `C
 ## Background work
 
 No external broker: jobs are DB rows claimed with `UPDATE … RETURNING` (or `FOR UPDATE SKIP LOCKED`) under a lease. Every eraser and storage delete is idempotent, and `not_found` counts as success.
+
+Conversions (C15) are not jobs: they run in a worker-thread pool while the request waits, and a converter past its timeout has its thread terminated (D67).
 
 Deletion (C14) claims one `queued` or lease-expired `running` job at a time, sets a lease and counts the start, runs every registered eraser, and fences each later write by the claimed `attempts` (D60). Every module that stores user data is listed in `USER_DATA_OWNERS` and registers an eraser, or readiness fails (D61).
 

@@ -18,8 +18,8 @@ The order the assignment is being built in, and why. Update the status column as
 | C11. Authorization chain | 1c | 1.3 | ✅ done |
 | C12. View and list | 2 | 1.4, 1.7 | ✅ done (PR #13) |
 | C13. Update | 2 | 1.5 | ✅ done (PR #14) |
-| C14. Delete | 2 | 1.6 | ⏳ PR #15; awaiting review/merge |
-| C15. Transformation framework | 3 | 2.0 | ⏭ next (after C14 merges) |
+| C14. Delete | 2 | 1.6 | ✅ done (PR #15) |
+| C15. Transformation framework | 3 | 2.0 | ⏳ PR open; awaiting review/merge |
 | C16. Text | 3 | 2.1 | pending |
 | C17. Images | 3 | 2.2 | pending |
 | C18. History | 3 | 2.3 | pending |
@@ -184,7 +184,7 @@ The shared projector and the storage interface land in 2a, so 2b and 2c build on
 
 ## Phase 3: File transformations (Part 2)
 
-1. **Framework** (spec 2.0, sequential):
+1. **Framework** (spec 2.0; C15 implemented, D65–D69):
    - the `transformations` migration
    - the converter interface and registry
    - a worker-thread pool (piscina), temp files and cleanup
