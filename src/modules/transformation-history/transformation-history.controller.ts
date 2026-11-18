@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { applyDecorators, Controller, Get, Param, Query } from '@nestjs/common';
 import {
   ApiOkResponse,
   ApiOperation,
@@ -73,15 +73,9 @@ const PAGE = {
   },
 };
 
-function documented(): MethodDecorator & ClassDecorator {
-  return (
-    target: object,
-    key?: string | symbol,
-    descriptor?: PropertyDescriptor,
-  ) => {
-    for (const query of QUERY) ApiQuery(query)(target, key!, descriptor!);
-  };
-}
+/** The shared query parameters of both history routes (spec 2.3 §1.3.1). */
+const documented = () =>
+  applyDecorators(...QUERY.map((query) => ApiQuery(query)));
 
 @ApiTags('transformations')
 @ApiResponse({ status: 400, description: 'Invalid query, period or cursor' })

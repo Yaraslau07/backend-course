@@ -1,0 +1,22 @@
+# C18 (spec 2.3). Sign in with auth.http first; convert a few files with convert.http/images.http.
+# Own history needs transformations@history; another user's needs transformations@history_any.
+@targetUserId = <another-user-id>
+@cursor = <nextCursor-from-the-previous-page>
+
+### Own history, newest first: 200 {items, nextCursor}
+GET {{baseUrl}}/api/transformations/history?limit=2
+
+### The next page: the cursor only works with the same limit and filters
+GET {{baseUrl}}/api/transformations/history?limit=2&cursor={{cursor}}
+
+### The same cursor with another limit: 400 invalid_cursor
+GET {{baseUrl}}/api/transformations/history?limit=3&cursor={{cursor}}
+
+### Filters: type, formats, status, period (from inclusive, to exclusive, UTC)
+GET {{baseUrl}}/api/transformations/history?type=image&status=success&createdAtFrom=2026-11-01T00:00:00Z
+
+### An invalid filter: 400
+GET {{baseUrl}}/api/transformations/history?status=pending
+
+### Someone's history (admin): 200, 403 without history_any, 404 for an unknown user
+GET {{baseUrl}}/admin/users/{{targetUserId}}/transformations/history?limit=20
