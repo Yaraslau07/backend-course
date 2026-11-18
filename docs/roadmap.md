@@ -22,8 +22,8 @@ The order the assignment is being built in, and why. Update the status column as
 | C15. Transformation framework | 3 | 2.0 | ✅ done (PR #16) |
 | C16. Text | 3 | 2.1 | ✅ done (PR #17) |
 | C17. Images | 3 | 2.2 | ✅ done (PR #18) |
-| C18. History | 3 | 2.3 | ⏳ PR #19; awaiting review/merge |
-| C19. Storage | 3 | 2.4 | pending |
+| C18. History | 3 | 2.3 | ✅ done (PR #19) |
+| C19. Storage | 3 | 2.4 | ⏭ next |
 | C20. Final audit | | all | pending |
 
 Each checkpoint is one branch and one PR. The next one starts only after the previous PR is merged.
@@ -73,10 +73,11 @@ How the author and the agent work, as agreed on 2026-11-16. A new session contin
 - **C13 (S3 storage):** setup completed with AWS S3; credentials stay in local `.env`. See `docs/storage-setup.md`. CI uses local/fake storage and needs no real AWS secrets; a future deployment must supply protected credentials.
 - **Any new secret:** the author adds it to their `.env` (`npm run keys:generate` prints one). Tell them before merging, because the app refuses to boot without it.
 
-**Local environment, as of 2026-11-16:**
+**Local environment, as of 2026-11-18:**
 - docker-compose runs Postgres (`app` and `app_test`) and Mailpit.
-- The `app` database has all migrations applied.
-- `.env` has every key, including `RATE_LIMIT_KEY_HMAC_KEY`, with `REGISTRATION_EMAIL_CONFIRMATION_ENABLED=false`.
+- Both databases have every migration applied, through `TransformationRetentionIndex` (C18).
+- `.env` has every key (no new secret since C13), with `REGISTRATION_EMAIL_CONFIRMATION_ENABLED=false`. The C14–C18 settings (`TRANSFORMATION_*`, `TEXT_*`, `IMAGE_*`) all have defaults and need no `.env` entry.
+- **The `app` database has never been RBAC-bootstrapped**, so every protected route answers 403 there and `/health/ready` is 503 (`transformations: down`, D66). Set `RBAC_BOOTSTRAP_ADMIN_USER_ID` to an active user's id and restart once. Smoke tests in C14–C18 used temporary bootstrapped databases instead, then dropped them.
 
 **Tooling traps that cost time before:**
 - `prettier --write src` also reformats the `README.MD` files under `src/`. Use `"src/**/*.ts"`.
@@ -170,7 +171,7 @@ The three features are independent of each other, but are built in order (C12 �
   - photo upload with sharp (WebP), clear photo
   - the storage adapter (local and S3/MinIO), the `storage_cleanup_jobs` worker and the orphan sweep
 
-C12 and C13 are merged.
+C12, C13 and C14 are merged (PRs #13–#15); Phase 2 is complete.
 
 - **2c. Delete** (spec 1.6; C14 implemented, D57–D63):
   - self deletion through the challenge engine; admin DELETE
@@ -195,4 +196,6 @@ The shared projector and the storage interface land in 2a, so 2b and 2c build on
    - 2.1 text (C16 implemented, D70–D72): CSV, JSON, XML and YAML in all 12 directions, using papaparse, fast-xml-parser (no DTD) and yaml (safe load)
    - 2.2 images (C17 implemented, D73–D75): png→jpeg, jpeg→png, svg→png/jpeg, using sharp and resvg (no network, unsafe SVG rejected)
 3. **History** (spec 2.3; C18 implemented, D76–D77): own and admin history, cursor pagination, 90-day retention.
-4. **Storage** (spec 2.4, sequential): `save=true`, a background upload worker over the `pending` rows, own and admin download, retention.
+4. **Storage** (spec 2.4, sequential, C19 next): `save=true`, a background upload worker over the `pending` rows, own and admin download, retention.
+   - Also in C19: the image dimensions in the conversion log (D78), `X-Save-Status`, and the storage columns that replace the fixed `not_requested` history fields.
+   - The Phase 3 review range is `22d2b8f...HEAD` (C15–C19, starting at the C14 merge), with `/code-review` and `/security-review`.
