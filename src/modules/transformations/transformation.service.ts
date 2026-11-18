@@ -196,6 +196,10 @@ export class TransformationService {
     const stream = createReadStream(result.path);
     try {
       await once(stream, 'open');
+    } catch {
+      // The temporary area failed under us: no partial answer, a 503 (spec 2.0 §1.4).
+      stream.destroy();
+      throw new AppException('service_unavailable');
     } finally {
       await this.temp.remove(result.path).catch(() => undefined);
     }
