@@ -70,6 +70,13 @@ export interface AppConfig {
   TRANSFORMATION_TEMP_DIR: string;
   /** Worker threads for converters (spec 2.0 §1.6). */
   TRANSFORMATION_WORKER_THREADS: number;
+  /** Spec 2.1 §1.1: input limit per text format (default 10 MiB each). */
+  TEXT_CSV_MAX_BYTES: number;
+  TEXT_JSON_MAX_BYTES: number;
+  TEXT_XML_MAX_BYTES: number;
+  TEXT_YAML_MAX_BYTES: number;
+  /** Spec 2.1 §1.1: 30 seconds. */
+  TEXT_CONVERSION_TIMEOUT_MS: number;
 
   /** Single-instance development/test storage; production uses S3. */
   STORAGE_LOCAL_ROOT: string;
