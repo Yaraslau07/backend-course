@@ -9,6 +9,11 @@ export const ERROR_CATALOGUE = {
   validation_failed: { status: 400, message: 'The request failed validation.' },
   invalid_json: { status: 400, message: 'The request body is not valid JSON.' },
   invalid_cursor: { status: 400, message: 'The cursor is invalid.' },
+  invalid_file: {
+    status: 400,
+    message:
+      'The file is damaged, unsafe or cannot be converted to the target format.',
+  },
   invalid_challenge: {
     status: 400,
     message: 'The code or link is invalid or has expired.',

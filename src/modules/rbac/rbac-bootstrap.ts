@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, type EntityManager } from 'typeorm';
 
+import { RbacPermissionSeeds } from './permission-seeds';
 import { ADMIN_ROLE, DEFAULT_ROLE } from './rbac.types';
 
 export type BootstrapResult =
@@ -32,9 +33,21 @@ const USER_ROLE_ACTIONS = ['read', 'update', 'delete'];
 export class RbacBootstrap {
   private readonly logger = new Logger('Rbac');
 
-  constructor(@InjectDataSource() private readonly db: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly db: DataSource,
+    private readonly seeds: RbacPermissionSeeds,
+  ) {}
 
+  /** The bootstrap, then every module's permission seed (whatever the bootstrap decided). */
   async run(adminUserId: string | undefined): Promise<BootstrapResult> {
+    const outcome = await this.bootstrap(adminUserId);
+    await this.seeds.applyAll();
+    return outcome;
+  }
+
+  private async bootstrap(
+    adminUserId: string | undefined,
+  ): Promise<BootstrapResult> {
     const result = await this.db.transaction(async (manager) => {
       await manager.query(
         `SELECT id FROM rbac_policy_state WHERE id = 1 FOR UPDATE`,

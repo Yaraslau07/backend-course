@@ -10,6 +10,7 @@ import type { PolicyRows } from './policy-snapshot';
 import { RbacAdminController } from './rbac-admin.controller';
 import { RbacAdminService } from './rbac-admin.service';
 import { RbacAuthorizer } from './rbac-authorizer';
+import { RbacPermissionSeeds } from './permission-seeds';
 import { RbacBootstrap } from './rbac-bootstrap';
 import { RbacPolicyStore } from './rbac-policy.store';
 
@@ -429,7 +430,14 @@ describe('RbacBootstrap', () => {
       ],
       [/UPDATE rbac_policy_state/, [[{ version: '1' }], 1]],
     ]);
-    return { bootstrap: new RbacBootstrap(dataSource(query)), query };
+    const applyAll = jest.fn().mockResolvedValue({});
+    return {
+      bootstrap: new RbacBootstrap(dataSource(query), {
+        applyAll,
+      } as unknown as RbacPermissionSeeds),
+      query,
+      applyAll,
+    };
   }
   let counter = 0;
   const randomId = () => `id-${++counter}`;

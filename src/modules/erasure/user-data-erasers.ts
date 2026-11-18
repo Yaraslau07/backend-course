@@ -21,9 +21,8 @@ export interface UserDataEraser {
  * Every module that stores user data, in one reviewed list (spec 1.6 §1.6: readiness fails when a
  * module stores user data without an eraser). A module adds its name here when it starts keeping
  * user data, and registers its eraser in `onModuleInit`; until it does, readiness stays down.
- * Part 2's transformations module adds `transformations`.
  */
-export const USER_DATA_OWNERS = ['profile'] as const;
+export const USER_DATA_OWNERS = ['profile', 'transformations'] as const;
 
 const SAFE_CODE = /^[a-z][a-z0-9_]{0,63}$/;
 
