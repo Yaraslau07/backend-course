@@ -124,6 +124,7 @@ One finished transformation (spec 2.0 §1.3.3; C15, D65, D69). Only safe metadat
 | `ck_transformations_outcome` | `success` has an output size and no error code; `error` has a code and no output size |
 | `ck_transformations_sizes` | sizes and duration are non-negative |
 | `idx_transformations_user_created_at_id` | spec 2.0 §1.6 and 2.3's keyset order (`created_at DESC, id DESC` walks it backwards) |
+| `idx_transformations_created_at` | spec 2.3 §1.6 retention across users (C18) |
 
 Storage columns (`storage_status`, `stored_file_key`, `stored_file_until`) arrive with spec 2.4 (C19).
 

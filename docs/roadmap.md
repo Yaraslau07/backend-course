@@ -21,8 +21,8 @@ The order the assignment is being built in, and why. Update the status column as
 | C14. Delete | 2 | 1.6 | ✅ done (PR #15) |
 | C15. Transformation framework | 3 | 2.0 | ✅ done (PR #16) |
 | C16. Text | 3 | 2.1 | ✅ done (PR #17) |
-| C17. Images | 3 | 2.2 | ⏳ PR #18; awaiting review/merge |
-| C18. History | 3 | 2.3 | pending |
+| C17. Images | 3 | 2.2 | ✅ done (PR #18) |
+| C18. History | 3 | 2.3 | ⏳ PR open; awaiting review/merge |
 | C19. Storage | 3 | 2.4 | pending |
 | C20. Final audit | | all | pending |
 
@@ -194,5 +194,5 @@ The shared projector and the storage interface land in 2a, so 2b and 2c build on
 2. **Text, then images** (independent of each other):
    - 2.1 text (C16 implemented, D70–D72): CSV, JSON, XML and YAML in all 12 directions, using papaparse, fast-xml-parser (no DTD) and yaml (safe load)
    - 2.2 images (C17 implemented, D73–D75): png→jpeg, jpeg→png, svg→png/jpeg, using sharp and resvg (no network, unsafe SVG rejected)
-3. **History** (spec 2.3, sequential): own and admin history, cursor pagination, 90-day retention.
+3. **History** (spec 2.3; C18 implemented, D76–D77): own and admin history, cursor pagination, 90-day retention.
 4. **Storage** (spec 2.4, sequential): `save=true`, a background upload worker over the `pending` rows, own and admin download, retention.

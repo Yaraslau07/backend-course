@@ -9,7 +9,7 @@ A running list of what's still outstanding. Check it before assuming something i
 
 ## Phase 1 framework pieces (deliberately not in Phase 0)
 - **The client half of spec 1.3 §1.3.3** (one shared refresh after a `401`, a single retry, clearing state) belongs to a frontend this project doesn't have (D48). The server guarantees what it relies on: a guard `401` always comes before the handler.
-- **Rate limits are partly unused:** every Part 1 policy is wired; the history policy arrives with its route (C18).
+- Every rate-limit policy is wired to its route or flow.
 
 ## User reads, updates and storage (C12–C13)
 - S3 and single-instance development/test storage support reads, writes, deletes and listing. Uploads normalize JPEG/PNG/WebP to bounded metadata-free WebP; readers trust that write boundary rather than re-encoding every read. Production rejects local storage. Profile/list responses need no storage access.
@@ -28,7 +28,7 @@ A running list of what's still outstanding. Check it before assuming something i
 - The confirm route's replay lookup (one primary-key read) runs before CSRF and IP limits (D64).
 
 ## Transformations (C15)
-- **Endpoints:** text (C16) and image (C17) conversion are live. History reads and retention arrive in C18, saving and downloads in C19.
+- **Endpoints:** text (C16) and image (C17) conversion and history (C18) are live. Saving and downloads arrive in C19.
 - The eraser deletes history rows only; stored objects join it in C19.
 - A worker thread has no `resourceLimits`: a library that allocates far more than its input is bounded by its timeout and the output limit, not by a memory cap. Native allocations (sharp, resvg) aren't covered by V8 limits anyway; C17 sets the libraries' own pixel limits.
 - The timeout includes time queued behind other conversions (D67). With `TRANSFORMATION_WORKER_THREADS=2`, more than two slow conversions at once can 504 sooner than their own work would.
@@ -48,6 +48,11 @@ A running list of what's still outstanding. Check it before assuming something i
 - The SVG check is structural (elements, attributes, `url()`, `@import`). CSS escape tricks could in principle hide a `url()` from it; resvg never fetches anything and every external reference is refused, so this is defence in depth.
 - resvg can't be interrupted mid-render, so an expensive SVG within the pixel limit runs to completion even past the timeout. The thread is then terminated, and the client still gets 504.
 - `save=true` is validated but not acted on until spec 2.4 (C19), as for text.
+
+## Transformation history (C18)
+- History items report `storageStatus: not_requested` until saving lands (spec 2.4, C19); retention then deletes stored objects before rows.
+- A cursor is valid until its row is deleted (retention or user deletion). After that it still continues correctly from its position: keyset paging doesn't need the row to exist.
+- Retention runs per instance; several instances may sweep at once, which is safe (each DELETE takes its own rows) but redundant.
 
 ## Infrastructure
 - No CD. The course only requires a service called through an HTTP client.
