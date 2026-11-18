@@ -539,6 +539,19 @@ describe('self confirmation and acceptance (spec 1.6 §1.3.2)', () => {
     ).toHaveLength(0);
   });
 
+  it('two concurrent confirms with the same key both get the one receipt (review fix)', async () => {
+    const actor = await member();
+    const { challengeId, code } = await challenge(actor);
+    const key = newKey();
+    const [first, second] = await Promise.all([
+      confirm(actor, actor.id, key, { challengeId, code }),
+      confirm(actor, actor.id, key, { challengeId, code }),
+    ]);
+    expect([first.statusCode, second.statusCode]).toEqual([202, 202]);
+    expect(first.json()).toMatchObject({ jobId: key });
+    expect(second.json()).toMatchObject({ jobId: key });
+  });
+
   it("confirming someone else's id is 403", async () => {
     const actor = await member();
     const other = await member();
@@ -748,6 +761,13 @@ describe('deletion status (spec 1.6 §1.3.4)', () => {
       status: 'queued',
       finishedAt: null,
     });
+  });
+
+  it('UUID case in the path does not change whose receipt it is (D51)', async () => {
+    const actor = await member();
+    const { key } = await selfDelete(actor);
+    const res = await statusByReceipt(actor.id.toUpperCase(), key);
+    expect(res.statusCode).toBe(200);
   });
 
   it('an unknown, malformed or mismatched receipt is the same 404; a cookie is never read', async () => {

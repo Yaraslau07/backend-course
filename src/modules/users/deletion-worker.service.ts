@@ -12,6 +12,7 @@ import {
   type EraseResult,
   UserDataErasers,
 } from '@/modules/erasure/user-data-erasers';
+import { CHALLENGE_SCENARIOS } from '@/modules/challenges/challenge-scenarios';
 import { lockRbacPolicy } from '@/modules/rbac/rbac-invariant';
 
 import type { DeletionJobStatus, UserStatus } from './users.types';
@@ -40,12 +41,10 @@ interface Claimed {
   attempts: number;
 }
 
-const CHALLENGE_TABLES = [
-  'registration_challenges',
-  'login_challenges',
-  'email_change_challenges',
-  'deletion_challenges',
-];
+/** Every scenario's table, from the engine's own map, so a new scenario is anonymized too. */
+const CHALLENGE_TABLES = Object.values(CHALLENGE_SCENARIOS).map(
+  (scenario) => scenario.table,
+);
 
 /**
  * The deletion worker (spec 1.6 §1.3.5, §1.3.6). Jobs are rows claimed with `FOR UPDATE SKIP

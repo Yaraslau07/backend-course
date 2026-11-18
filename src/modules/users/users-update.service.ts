@@ -31,14 +31,11 @@ import {
   challengeInput,
 } from './update-input';
 import { validateUserId } from './user-list-query';
+import { uuidOrNull } from './user-ids';
 
 const FIELDS =
   'id, email, display_name, photo_key, status, created_at, updated_at';
-const uuid = (id: string) =>
-  id.length === 36 &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
-    ? id
-    : null;
+const uuid = uuidOrNull;
 
 @Injectable()
 export class UsersUpdateService {

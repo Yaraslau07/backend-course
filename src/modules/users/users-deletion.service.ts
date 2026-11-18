@@ -18,7 +18,9 @@ import {
   type IssuedChallenge,
   type Outcome,
 } from '@/modules/challenges/challenge-engine.service';
+import { CHALLENGE_SCENARIOS } from '@/modules/challenges/challenge-scenarios';
 import { isChallengeId } from '@/modules/challenges/challenge-secrets';
+import type { ChallengeScenario } from '@/core/mail/templates';
 import { RbacAuthorizer } from '@/modules/rbac/rbac-authorizer';
 import {
   assertRbacManagerRemains,
@@ -27,6 +29,7 @@ import {
 
 import { idempotencyKey, newTombstone, receiptJobId } from './deletion-input';
 import { challengeInput } from './update-input';
+import { sameUserId, uuidOrNull } from './user-ids';
 import { validateUserId } from './user-list-query';
 import type { DeletionJobStatus, UserStatus } from './users.types';
 
@@ -61,13 +64,13 @@ interface UserRow {
 }
 
 const JOB_FIELDS = 'id, user_id, status, created_at, updated_at, finished_at';
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** A valid non-UUID id is an absent target, bound as null rather than cast (D51). */
-const uuid = (id: string) => (UUID.test(id) ? id : null);
-const sameId = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+const uuid = uuidOrNull;
+const sameId = sameUserId;
 
-/** Challenges a deletion makes obsolete. Its own deletion challenge is handled separately. */
-const OTHER_SCENARIOS = ['registration', 'login', 'email_change'] as const;
+/** Challenges a deletion makes obsolete: every scenario but its own, which is handled separately. */
+const OTHER_SCENARIOS = (
+  Object.keys(CHALLENGE_SCENARIOS) as ChallengeScenario[]
+).filter((scenario) => scenario !== 'deletion');
 
 /**
  * Accepting a deletion (spec 1.6): the self challenge, the self confirmation, the admin DELETE and
@@ -171,7 +174,22 @@ export class UsersDeletionService implements OnModuleInit {
     const key = receiptJobId(request.headers['idempotency-key']);
     const target = (request.params as { userId?: unknown } | undefined)?.userId;
     if (!key || typeof target !== 'string') return 'none';
-    const existing = await this.jobById(this.db.manager, key);
+    let existing: JobRow | null;
+    try {
+      existing = await this.jobById(this.db.manager, key);
+    } catch (error) {
+      // Part of the authorization chain: an outage is 503 authorization_unavailable (spec 1.3).
+      if (classifyDbError(error)?.kind !== 'unavailable') throw error;
+      this.logger.error(
+        {
+          event: 'deletion_replay_check',
+          result: 'unavailable',
+          category: 'database',
+        },
+        'replay check unavailable',
+      );
+      throw new AppException('authorization_unavailable');
+    }
     if (!existing) return 'none';
     if (sameId(existing.user_id, target)) return 'replay';
     this.event('deletion_key_conflict', { mode: 'self' });
@@ -199,6 +217,16 @@ export class UsersDeletionService implements OnModuleInit {
       outcome = await this.db.transaction(async (manager) => {
         await lockRbacPolicy(manager);
         const row = await this.lockUser(manager, actor);
+        // A concurrent request with the same key may have committed while we waited for the locks.
+        const raced = await this.jobById(manager, key);
+        if (raced)
+          return {
+            ok: true,
+            value: {
+              receipt: this.replayOrConflict(raced, target, 'self'),
+              accepted: false,
+            },
+          };
         const checked = await this.challenges.confirm(manager, 'deletion', {
           userId: row.id,
           // Step 6: a user who is no longer active consumes the challenge as user_inactive.
@@ -337,8 +365,8 @@ export class UsersDeletionService implements OnModuleInit {
     if (!actor) {
       const jobId = receiptJobId(rawReceipt);
       const found = jobId ? await this.jobById(this.db.manager, jobId) : null;
-      // The receipt must name exactly this path's user; anything else is the same 404.
-      const ok = found !== null && found.user_id === target;
+      // The receipt must name this path's user (UUID case ignored, D51); anything else is the same 404.
+      const ok = found !== null && sameId(found.user_id, target);
       this.event('deletion_status', {
         branch: 'self',
         result: ok ? 'found' : 'not_found',

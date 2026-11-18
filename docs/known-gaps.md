@@ -15,6 +15,7 @@ A running list of what's still outstanding. Check it before assuming something i
 - S3 and single-instance development/test storage support reads, writes, deletes and listing. Uploads normalize JPEG/PNG/WebP to bounded metadata-free WebP; readers trust that write boundary rather than re-encoding every read. Production rejects local storage. Profile/list responses need no storage access.
 - AWS credentials currently use the explicitly validated local configuration. Workload-role/temporary-credential integration and bucket-version purging are not implemented. Use a private, unversioned bucket/prefix; see `docs/storage-setup.md`. CI needs no real AWS credentials.
 - Workers must use the same reference database as the configured bucket/prefix. Isolated smoke tests disable automatic workers and remove only their own objects. Reconciliation is bounded, retains listing progress in memory, and may be delayed by continuous uploads while its exclusive advisory lock is unavailable; restarting an instance restarts its scan.
+- Cleanup holds its job row lock, and the orphan sweep its exclusive adoption lock, through bounded storage calls (D53). Slow S3 lengthens those transactions and briefly delays uploads; moving the I/O out of the transaction would need a lease (D64).
 - A stream failure before response bytes produces a safe 503; after bytes are sent, the connection is aborted. It cannot become a JSON error envelope after streaming starts. The storage error/path is never propagated.
 - List queries warn at 500 ms and are cancelled by Postgres at 2 seconds. Automatic EXPLAIN/production plan monitoring is not configured; composite range and prefix indexes are supplied by the migration.
 
@@ -24,6 +25,8 @@ A running list of what's still outstanding. Check it before assuming something i
 - Anonymization doesn't touch `rate_limits` rows: their keys are HMACs of the user id, never the id itself, and they expire with their window.
 - A `failed` job stays failed until an admin repeats `DELETE`; nothing alerts on it. Watch `deletion_job_failed` events.
 - Each process runs one worker loop (every 5 s, up to 10 jobs). Several instances share the queue safely through `SKIP LOCKED` and the attempt fence (D60).
+- The lease isn't renewed while erasers run. Each eraser must stay well under `DELETION_WORKER_LEASE_SECONDS`; an overlapping second run can't change anything (attempt fence) but uses up a start (D64).
+- The confirm route's replay lookup (one primary-key read) runs before CSRF and IP limits (D64).
 
 ## Infrastructure
 - No CD. The course only requires a service called through an HTTP client.

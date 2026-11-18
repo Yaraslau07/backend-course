@@ -15,11 +15,10 @@ import { safeProfile, type SafeProfile, type ProfileRow } from './safe-profile';
 import { UserListCursor } from './user-list-cursor.service';
 import { parseUserListQuery, validateUserId } from './user-list-query';
 
+import { uuidOrNull } from './user-ids';
+
 const PROFILE_FIELDS =
   'id, email, display_name, photo_key, status, created_at, updated_at';
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const uuidOrNull = (id: string) =>
-  id.length === 36 && UUID.test(id) ? id : null;
 // Operational warning below the contract's hard two-second SQL timeout; no query values.
 const SLOW_LIST_MS = 500;
 

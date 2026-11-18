@@ -47,6 +47,10 @@ function setup() {
       | Record<string, unknown>
       | undefined,
     byKey: undefined as Record<string, unknown> | undefined,
+    /** Appears from the second lookup on: a job committed by a concurrent request. */
+    racedByKey: undefined as Record<string, unknown> | undefined,
+    keyLookups: 0,
+    lookupError: undefined as Error | undefined,
     forUser: undefined as Record<string, unknown> | undefined,
     holder: true,
     insertError: undefined as Error | undefined,
@@ -54,8 +58,12 @@ function setup() {
   const sql = jest.fn((text: string): Promise<unknown> => {
     if (text.startsWith('SELECT id, email, status FROM users'))
       return Promise.resolve(state.user ? [state.user] : []);
-    if (text.includes('FROM deletion_jobs WHERE id'))
-      return Promise.resolve(state.byKey ? [state.byKey] : []);
+    if (text.includes('FROM deletion_jobs WHERE id')) {
+      if (state.lookupError) return Promise.reject(state.lookupError);
+      const found =
+        state.byKey ?? (state.keyLookups++ > 0 ? state.racedByKey : undefined);
+      return Promise.resolve(found ? [found] : []);
+    }
     if (text.includes('FROM deletion_jobs WHERE user_id'))
       return Promise.resolve(state.forUser ? [state.forUser] : []);
     if (text.startsWith('INSERT INTO deletion_jobs'))
@@ -152,6 +160,16 @@ describe('UsersDeletionService (spec 1.6)', () => {
         await s.replays.check('deletion_confirm', request(KEY, other)),
       ).toBe('conflict');
       expect(await s.service.matchReplay(request('bad', actor))).toBe('none');
+      s.state.lookupError = Object.assign(new Error('down'), {
+        code: 'ECONNREFUSED',
+      });
+      expect(
+        await codeOf(() => s.service.matchReplay(request(KEY, actor))),
+      ).toBe('authorization_unavailable');
+      s.state.lookupError = new Error('bug');
+      expect(
+        await codeOf(() => s.service.matchReplay(request(KEY, actor))),
+      ).toBe('other');
       expect(await s.service.matchReplay(request(KEY, undefined))).toBe('none');
     });
   });
@@ -280,6 +298,18 @@ describe('UsersDeletionService (spec 1.6)', () => {
       s.state.byKey = job({ user_id: other });
       expect(await codeOf(() => confirm(s))).toBe('idempotency_conflict');
       expect(s.challenges.confirm).not.toHaveBeenCalled();
+    });
+
+    it('a job committed under the same key while waiting for the locks is the answer (review fix)', async () => {
+      const s = setup();
+      s.state.racedByKey = job();
+      expect(await confirm(s)).toMatchObject({ jobId: KEY, status: 'queued' });
+      expect(s.challenges.confirm).not.toHaveBeenCalled();
+      expect(ran(s, 'INSERT INTO deletion_jobs')).toBe(false);
+
+      const other_ = setup();
+      other_.state.racedByKey = job({ user_id: other });
+      expect(await codeOf(() => confirm(other_))).toBe('idempotency_conflict');
     });
 
     it('fails closed without a verified user when it is not a replay', async () => {
@@ -434,10 +464,8 @@ describe('UsersDeletionService (spec 1.6)', () => {
       const lettered = 'abcdef12-1111-4111-8111-111111111111';
       s.state.byKey = job({ user_id: lettered });
       expect(
-        await codeOf(() =>
-          s.service.status(undefined, lettered.toUpperCase(), KEY),
-        ),
-      ).toBe('not_found');
+        await s.service.status(undefined, lettered.toUpperCase(), KEY),
+      ).toMatchObject({ jobId: KEY });
       s.state.byKey = job();
       expect(await s.service.status(undefined, actor, KEY)).toEqual({
         jobId: KEY,

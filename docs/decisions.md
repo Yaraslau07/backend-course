@@ -394,3 +394,19 @@ Spec 1.6 §1.3.2 step 2 checks the `Idempotency-Key` before access, CSRF and RBA
 ## D63: Role assignment refuses accounts being deleted (2026-11-18)
 
 Spec 1.6 requires role assignment to re-check the target status under the shared lock and reject `deleting` or `deleted`. `PUT /admin/rbac/users/{id}/roles` now does so with `409 conflict` after locking the user, so a deletion's role removal can't be undone while the worker runs.
+
+## D64: C14 and phase 2 review findings (2026-11-18, amends D58)
+
+`/code-review medium 25a9c5b...HEAD` covered the whole of phase 2 (C12–C14). `/security-review` on the branch found no vulnerabilities.
+
+Fixed:
+- **Concurrent confirms with one key.** Both requests could read "no job" before either committed. The second then met a `confirmed` challenge or a `deleting` user and got 4xx instead of the receipt. The key is now looked up again inside the transaction, after the policy and user locks, and answers as a replay (or a 409 for another user). An e2e test sends two confirms at once; it fails without the fix.
+- **Receipt branch and UUID case (amends D58).** The status receipt branch compared the job's user with the path id case-sensitively, so a client that used an uppercase path everywhere else could never read its status. It now uses the same case-insensitive comparison as ownership (D51). Unknown, malformed and other users' receipts are still the same 404.
+- **The replay check during an outage** is `503 authorization_unavailable`, like the other chain steps. The filter already turned it into `503 service_unavailable`; it was never a 500.
+- **Shared id rules.** `uuidOrNull` and `sameUserId` live in `src/modules/users/user-ids.ts` and the read, update and deletion services use them. The deletion flow and worker derive their challenge scenarios and tables from `CHALLENGE_SCENARIOS`, so a new scenario is consumed at acceptance and deleted at anonymization without another list to update.
+- **Rate limiter clock.** `consume()` no longer rewrites `now()` in its SQL text. The fragments take the clock as a parameter (`now()` standalone, `statement_timestamp()` in a caller's transaction, D54).
+
+Not changed, recorded in `docs/known-gaps.md`:
+- The replay lookup runs before CSRF and IP limits on every confirm. It is one primary-key read, the same cost as the access check's user read that every protected request already does. Running CSRF first would turn an unauthenticated cross-origin write into a 403 instead of the 401 that spec 1.3 orders.
+- Storage cleanup holds its job row lock, and the orphan sweep its exclusive adoption lock, through bounded storage calls. That was D53's deliberate trade-off: no lease schema for short I/O. Under slow S3 this lengthens transactions and briefly delays uploads.
+- The deletion lease isn't renewed while erasers run. Erasers are bounded well under the 300 s lease (the profile eraser makes one 5 s-bounded storage call), and the attempt fence keeps an overlapping run from changing anything. A Part 2 eraser that can approach the lease must renew it or stay bounded.
