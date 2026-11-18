@@ -2,6 +2,7 @@ import { join } from 'node:path';
 
 import {
   Controller,
+  HttpCode,
   Injectable,
   Module,
   type OnModuleInit,
@@ -65,6 +66,7 @@ class TransformProbeController {
   constructor(private readonly transformations: TransformationService) {}
 
   @Post()
+  @HttpCode(200)
   @RequirePermission('transformations', 'convert')
   convert(
     @CurrentUserId() userId: string,

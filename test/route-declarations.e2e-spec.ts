@@ -63,6 +63,8 @@ describe('Route declarations (e2e)', () => {
           rbac: 'up',
           route_declarations: 'down',
           smtp: 'up',
+          transformation_temp: 'up',
+          transformations: 'up',
           user_data_erasers: 'up',
         },
       });
