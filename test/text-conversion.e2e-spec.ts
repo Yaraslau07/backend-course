@@ -284,7 +284,7 @@ describe('POST /api/convert: twelve directions (spec 2.1 §1.3.1)', () => {
   });
 
   it('accepts a UTF-8 BOM and the save flag (stored in spec 2.4)', async () => {
-    const res = await convert(member, 'bom.csv', '﻿a\n1\n', 'json', {
+    const res = await convert(member, 'bom.csv', '\uFEFFa\n1\n', 'json', {
       extra: [{ field: 'save', value: 'false' }],
     });
     expect(res.statusCode).toBe(200);

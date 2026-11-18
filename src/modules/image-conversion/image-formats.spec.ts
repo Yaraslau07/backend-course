@@ -194,7 +194,7 @@ describe('SVG → PNG/JPEG (spec 2.2 user stories 3–4, §1.3.2)', () => {
   it('PNG keeps transparency; JPEG gets the background', async () => {
     const shape = svg(
       'width="20" height="20"',
-      '<circle cx="2" cy="2" r="1" fill="red"/>',
+      '<circle cx="15" cy="15" r="2" fill="red"/>',
     );
     const png = await convert('svg', 'png', shape);
     expect((await sharp(png.bytes).metadata()).hasAlpha).toBe(true);
