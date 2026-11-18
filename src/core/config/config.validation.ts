@@ -210,6 +210,12 @@ export const configSchema = Joi.object<AppConfig>({
     .min(30)
     .max(3600)
     .default(300),
+  TRANSFORMATION_TEMP_DIR: Joi.string().allow('').default(''),
+  TRANSFORMATION_WORKER_THREADS: Joi.number()
+    .integer()
+    .min(1)
+    .max(32)
+    .default(2),
 
   /* SMTP */
   STORAGE_LOCAL_ROOT: Joi.string().min(1).default('.storage'),

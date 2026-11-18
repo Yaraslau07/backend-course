@@ -66,6 +66,11 @@ export interface AppConfig {
   RBAC_BOOTSTRAP_ADMIN_USER_ID?: string;
   DELETION_WORKER_LEASE_SECONDS: number;
 
+  /** Private temporary area for conversions (spec 2.0 §1.3.4); empty means `<os tmpdir>/backend-course-transformations`. */
+  TRANSFORMATION_TEMP_DIR: string;
+  /** Worker threads for converters (spec 2.0 §1.6). */
+  TRANSFORMATION_WORKER_THREADS: number;
+
   /** Single-instance development/test storage; production uses S3. */
   STORAGE_LOCAL_ROOT: string;
   STORAGE_DRIVER: 'local' | 's3';

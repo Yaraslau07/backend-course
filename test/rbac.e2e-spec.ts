@@ -137,8 +137,19 @@ describe('Bootstrap (spec 1.1 §1.1)', () => {
          FROM permissions p JOIN permission_actions pa ON pa.permission_id = p.id
         GROUP BY p.name ORDER BY p.name`,
     );
+    // Module seeds run right after the bootstrap (D66): transformations (spec 2.0 §1.1).
     expect(permissions).toEqual([
       { name: 'rbac', actions: ['manage'] },
+      {
+        name: 'transformations',
+        actions: [
+          'convert',
+          'download',
+          'download_any',
+          'history',
+          'history_any',
+        ],
+      },
       {
         name: 'users',
         actions: [
@@ -174,7 +185,19 @@ describe('Bootstrap (spec 1.1 §1.1)', () => {
         all_actions: false,
         actions: ['manage'],
       },
+      {
+        role: 'admin',
+        permission: 'transformations',
+        all_actions: true,
+        actions: [],
+      },
       { role: 'admin', permission: 'users', all_actions: true, actions: [] },
+      {
+        role: 'user',
+        permission: 'transformations',
+        all_actions: false,
+        actions: ['convert', 'download', 'history'],
+      },
       {
         role: 'user',
         permission: 'users',

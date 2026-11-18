@@ -40,6 +40,8 @@ describe('Health and bootstrap (e2e)', () => {
         route_declarations: 'up',
         rbac: 'up',
         smtp: 'up',
+        transformation_temp: 'up',
+        transformations: 'up',
         user_data_erasers: 'up',
       },
     });

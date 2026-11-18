@@ -16,6 +16,7 @@ import { AuthModule } from '@/modules/auth/auth.module';
 import { ChallengesModule } from '@/modules/challenges/challenges.module';
 import { RbacModule } from '@/modules/rbac/rbac.module';
 import { UsersModule } from '@/modules/users/users.module';
+import { TransformationsModule } from '@/modules/transformations/transformations.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { UsersModule } from '@/modules/users/users.module';
     ChallengesModule,
     RbacModule,
     UsersModule,
+    TransformationsModule,
     AuthModule,
   ],
 })

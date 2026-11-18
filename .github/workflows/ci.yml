@@ -153,14 +153,29 @@ jobs:
           ENV
           sed -i 's/^ *//' app.env
           docker run -d --name app --network ci --env-file app.env --env-file keys.env -p 3007:3007 backend-course:ci
-      - name: Liveness and readiness must pass (hard check)
+      - name: Before the RBAC bootstrap the app is live but not ready (spec 2.0 §1.1)
         run: |
           for i in $(seq 1 30); do curl -sf http://localhost:3007/health/live && break; sleep 2; done
           curl -sf http://localhost:3007/health/live
           # Readiness is IP-gated to loopback, so ask from inside the container.
+          # No `user` role yet, so the transformations check must hold readiness down (D66).
+          ! docker exec app wget -qO- http://127.0.0.1:3007/health/ready
+      - name: Bootstrap RBAC like a first install, then restart
+        run: |
+          ADMIN=$(docker exec pg psql -U postgres -d app -Atc \
+            "INSERT INTO users (email, password_hash, status) VALUES ('ci-admin@example.test', 'ci-not-a-real-hash', 'active') RETURNING id" | head -1)
+          docker rm -f app
+          docker run -d --name app --network ci --env-file app.env --env-file keys.env \
+            -e RBAC_BOOTSTRAP_ADMIN_USER_ID="$ADMIN" -p 3007:3007 backend-course:ci
+      - name: Liveness and readiness must pass (hard check)
+        run: |
+          for i in $(seq 1 30); do curl -sf http://localhost:3007/health/live && break; sleep 2; done
+          curl -sf http://localhost:3007/health/live
           docker exec app wget -qO- http://127.0.0.1:3007/health/ready
           # From outside it must look like it doesn't exist.
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3007/health/ready)" = "404"
+          # The module seeded its permission right after the bootstrap.
+          test "$(docker exec pg psql -U postgres -d app -Atc "SELECT count(*) FROM permissions WHERE name = 'transformations'")" = "1"
       - name: The image applied its compiled migrations
         run: |
           test "$(docker exec pg psql -U postgres -d app -Atc 'SELECT count(*) FROM rbac_policy_state')" = "1"

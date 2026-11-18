@@ -3,7 +3,7 @@
 A running list of what's still outstanding. Check it before assuming something is unhandled, and update it as gaps close or new ones appear. For the overall build order, see `docs/roadmap.md`.
 
 ## Database
-- The schema covers Part 1, rate-limit counters (C5), user-list indexes (C12), and the photo-reference index (C13). The `transformations` table still needs its own migration (C15).
+- The schema covers Part 1, rate-limit counters (C5), user-list indexes (C12), the photo-reference index (C13) and the `transformations` history (C15). Its storage columns come with C19.
 - `POSTGRES_MIGRATIONS_RUN=false` by default, so a deploy must run `npm run migration:run` (or set the flag) itself. CI and `npm run test:e2e` migrate their own database.
 - `grants.all_actions = true` should mean "no `grant_actions` rows". That spans two tables, so the admin service never writes such rows and a snapshot reload refuses them (D45); a direct SQL change could still create one, and protected routes would then answer 503 until it is fixed.
 
@@ -20,13 +20,20 @@ A running list of what's still outstanding. Check it before assuming something i
 - List queries warn at 500 ms and are cancelled by Postgres at 2 seconds. Automatic EXPLAIN/production plan monitoring is not configured; composite range and prefix indexes are supplied by the migration.
 
 ## User deletion (C14)
-- **Part 2 must register an eraser.** `USER_DATA_OWNERS` lists only `profile`; the transformations module adds `transformations` with its eraser (C15), or readiness fails by design (D61).
 - A self confirmation with a malformed key, or a key that has no job yet, runs the full chain before validation, so its 400 comes after 401/403 (D57). A replay with a valid key skips the chain.
 - Anonymization doesn't touch `rate_limits` rows: their keys are HMACs of the user id, never the id itself, and they expire with their window.
 - A `failed` job stays failed until an admin repeats `DELETE`; nothing alerts on it. Watch `deletion_job_failed` events.
 - Each process runs one worker loop (every 5 s, up to 10 jobs). Several instances share the queue safely through `SKIP LOCKED` and the attempt fence (D60).
 - The lease isn't renewed while erasers run. Each eraser must stay well under `DELETION_WORKER_LEASE_SECONDS`; an overlapping second run can't change anything (attempt fence) but uses up a start (D64).
 - The confirm route's replay lookup (one primary-key read) runs before CSRF and IP limits (D64).
+
+## Transformations (C15)
+- **No public endpoint yet.** The framework is exercised by a test-only probe route; `POST /api/convert` and its formats list arrive in C16, images in C17, history reads and retention in C18, saving and downloads in C19.
+- The eraser deletes history rows only; stored objects join it in C19.
+- A worker thread has no `resourceLimits`: a library that allocates far more than its input is bounded by its timeout and the output limit, not by a memory cap. Native allocations (sharp, resvg) aren't covered by V8 limits anyway; C17 sets the libraries' own pixel limits.
+- The timeout includes time queued behind other conversions (D67). With `TRANSFORMATION_WORKER_THREADS=2`, more than two slow conversions at once can 504 sooner than their own work would.
+- The result's name is removed as soon as it is opened (POSIX semantics, D68). A Windows host would need a different cleanup.
+- A database without a `user` role (a fresh deployment, or an un-bootstrapped dev database) reports `transformations: down`, so `/health/ready` is 503 until RBAC is bootstrapped; the seed waits for that start (D66). Liveness and the Docker `HEALTHCHECK` are unaffected.
 
 ## Infrastructure
 - No CD. The course only requires a service called through an HTTP client.
