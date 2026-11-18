@@ -36,6 +36,19 @@ import {
 const logs = new LogCapture();
 /** Everything spec 1.6 §1.5 keeps out of the logs: ids, keys, emails, secrets, tombstones. */
 const sensitive: string[] = [];
+/**
+ * Requests to routes outside spec 1.6 (profile read, role assignment, registration). Those may log
+ * user ids under their own specs, so only their lines are exempt from the id check.
+ */
+const otherRoutes = new Set<string>();
+const outsideDeletion = <T extends { headers: Record<string, unknown> }>(
+  res: T,
+): T => {
+  otherRoutes.add(String(res.headers['x-request-id']));
+  return res;
+};
+const UUID_VALUE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 let app: NestFastifyApplication;
 let config: AppConfig;
 let db: DataSource;
@@ -63,7 +76,19 @@ beforeEach(async () => {
   probe.next = { result: 'succeeded' };
 });
 afterAll(async () => {
-  logs.expectNoLeaks(config, sensitive);
+  logs.expectNoLeaks(
+    config,
+    sensitive.filter((value) => !UUID_VALUE.test(value)),
+  );
+  const ids = sensitive.filter((value) => UUID_VALUE.test(value));
+  const leaking = logs
+    .lines()
+    .filter(
+      (line) => !otherRoutes.has(String((line.req as { id?: string })?.id)),
+    )
+    .filter((line) => ids.some((id) => JSON.stringify(line).includes(id)));
+  // Only the count and events, never the values themselves.
+  expect(leaking.map((line) => line.event)).toEqual([]);
   await app.close();
   await rm(root, { recursive: true, force: true });
 });
@@ -474,9 +499,12 @@ describe('self confirmation and acceptance (spec 1.6 §1.3.2)', () => {
 
     // The old session no longer works (access and refresh need an active user).
     expect(
-      (await call('GET', `/users/${actor.id}`, { actor })).statusCode,
+      outsideDeletion(await call('GET', `/users/${actor.id}`, { actor }))
+        .statusCode,
     ).toBe(401);
-    const profile = await call('GET', `/users/${actor.id}`, { actor: admin });
+    const profile = outsideDeletion(
+      await call('GET', `/users/${actor.id}`, { actor: admin }),
+    );
     expect(profile.json()).toMatchObject({
       status: 'deleting',
       photoUrl: null,
@@ -691,13 +719,15 @@ describe('admin deletion (spec 1.6 §1.3.3)', () => {
   it('role assignment refuses a deleting user (409)', async () => {
     const target = await member();
     await adminDelete(admin, target.id, newKey());
-    const put = await app.inject({
-      method: 'PUT',
-      url: `/admin/rbac/users/${target.id}/roles`,
-      cookies: admin.cookies,
-      payload: { roleIds: [await roleId(db, 'user')] },
-      remoteAddress: ip(),
-    });
+    const put = outsideDeletion(
+      await app.inject({
+        method: 'PUT',
+        url: `/admin/rbac/users/${target.id}/roles`,
+        cookies: admin.cookies,
+        payload: { roleIds: [await roleId(db, 'user')] },
+        remoteAddress: ip(),
+      }),
+    );
     expect(put.statusCode).toBe(409);
     expect(await roleCount(target.id)).toBe(0);
   });
@@ -831,9 +861,11 @@ describe('deletion worker and anonymization (spec 1.6 §1.3.5, §1.3.6)', () => 
     ).not.toBeNull();
 
     // The old email is free again: a new registration gets a new id and none of the old roles.
-    const reg = await call('POST', '/auth/register', {
-      body: { email: actor.email, password: PASSWORD },
-    });
+    const reg = outsideDeletion(
+      await call('POST', '/auth/register', {
+        body: { email: actor.email, password: PASSWORD },
+      }),
+    );
     expect(reg.statusCode).toBe(201);
     const [fresh] = await db.query<{ id: string }[]>(
       `SELECT id FROM users WHERE email = $1`,

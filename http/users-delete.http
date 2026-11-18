@@ -1,0 +1,55 @@
+# C14 (spec 1.6). Sign in with auth.http. The HTTP client keeps access cookies.
+# Self needs users@delete; admin DELETE and the admin status branch also need users@delete_any.
+# Idempotency-Key: 32 lowercase hex characters you choose (e.g. `openssl rand -hex 16`); it becomes the jobId.
+@userId = <your-user-id>
+@targetUserId = <another-user-id>
+@challengeId = <challengeId-from-202>
+@jobId = <32-lowercase-hex>
+
+### Start self deletion: 202 with challengeId; the OTP is in Mailpit (localhost:8025)
+POST {{baseUrl}}/users/{{userId}}/deletion-challenge
+
+### A second one within 60 s: 429 resend_cooldown with retryAfterSeconds
+POST {{baseUrl}}/users/{{userId}}/deletion-challenge
+
+### Resend after 60 s: 202, a new code; at most five deletion emails per hour
+POST {{baseUrl}}/users/{{userId}}/deletion-challenge/resend
+Content-Type: application/json
+
+{"challengeId": "{{challengeId}}"}
+
+### Someone else's id: 403 before any lookup
+POST {{baseUrl}}/users/{{targetUserId}}/deletion-challenge
+
+### Confirm: 202 {jobId, status: queued, statusUrl}, expired access/refresh cookies, account deleting
+POST {{baseUrl}}/users/{{userId}}/deletion-confirm
+Content-Type: application/json
+Idempotency-Key: {{jobId}}
+
+{"challengeId": "{{challengeId}}", "code": "123456"}
+
+### The same key again (a lost 202): 202 with the same job, no session needed
+POST {{baseUrl}}/users/{{userId}}/deletion-confirm
+Content-Type: application/json
+Idempotency-Key: {{jobId}}
+
+{"challengeId": "{{challengeId}}", "code": "000000"}
+
+### Status by receipt (self branch; the cookie is not read): 200 queued → running → succeeded
+GET {{baseUrl}}/users/{{userId}}/deletion-status
+Deletion-Receipt: {{jobId}}
+
+### An unknown or mismatched receipt: 404
+GET {{baseUrl}}/users/{{targetUserId}}/deletion-status
+Deletion-Receipt: {{jobId}}
+
+### Admin: own id is 403 self_confirmation_required
+DELETE {{baseUrl}}/users/{{userId}}
+Idempotency-Key: 00000000000000000000000000000001
+
+### Admin deletes someone else: 202; repeating (any key) returns the same job; a failed job is requeued
+DELETE {{baseUrl}}/users/{{targetUserId}}
+Idempotency-Key: 00000000000000000000000000000002
+
+### Admin status branch (no receipt header): 200, or 404 without a job
+GET {{baseUrl}}/users/{{targetUserId}}/deletion-status

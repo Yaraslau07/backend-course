@@ -299,11 +299,14 @@ export class RbacAdminService {
       userId,
       async (manager) => {
         // Lock order: policy state (in change()) → user.
-        const [user] = await manager.query<{ id: string }[]>(
-          `SELECT id FROM users WHERE id = $1 FOR UPDATE`,
+        const [user] = await manager.query<{ id: string; status: string }[]>(
+          `SELECT id, status FROM users WHERE id = $1 FOR UPDATE`,
           [userId],
         );
         if (!user) throw new AppException('not_found');
+        // Spec 1.6: a deletion removed the roles; nothing may give them back (re-checked under the lock).
+        if (user.status === 'deleting' || user.status === 'deleted')
+          throw new AppException('conflict');
         const [{ count }] = await manager.query<{ count: number }[]>(
           `SELECT count(*)::int AS count FROM roles WHERE id = ANY($1::uuid[])`,
           [roleIds],
