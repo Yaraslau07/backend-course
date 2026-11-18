@@ -19,6 +19,7 @@ import { UsersModule } from '@/modules/users/users.module';
 import { TransformationsModule } from '@/modules/transformations/transformations.module';
 import { TextConversionModule } from '@/modules/text-conversion/text-conversion.module';
 import { ImageConversionModule } from '@/modules/image-conversion/image-conversion.module';
+import { TransformationHistoryModule } from '@/modules/transformation-history/transformation-history.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { ImageConversionModule } from '@/modules/image-conversion/image-conversi
     TransformationsModule,
     TextConversionModule,
     ImageConversionModule,
+    TransformationHistoryModule,
     AuthModule,
   ],
 })

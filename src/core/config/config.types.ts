@@ -70,6 +70,8 @@ export interface AppConfig {
   TRANSFORMATION_TEMP_DIR: string;
   /** Worker threads for converters (spec 2.0 §1.6). */
   TRANSFORMATION_WORKER_THREADS: number;
+  /** Spec 2.3 §1.1: history rows older than this are deleted (default 90 days). */
+  TRANSFORMATION_HISTORY_RETENTION_DAYS: number;
   /** Spec 2.1 §1.1: input limit per text format (default 10 MiB each). */
   TEXT_CSV_MAX_BYTES: number;
   TEXT_JSON_MAX_BYTES: number;
