@@ -346,3 +346,51 @@ Final review caught an entropy mismatch in D53: UUID v4 has 122 random bits afte
 - PR #13 is now confirmed merged (`e284a5d`); PR #14 targets `main` and its diff contains C13 only. The roadmap records C12 complete. The interrupted 128-bit key correction and its reconciliation regression are retained and validated before pushing.
 - Two intermittent failures in the interrupted run affected health/OpenAPI and CSRF tests using per-request Supertest sockets. Those suites now use the existing Fastify injection transport and retain their status, CORS, security-header, readiness and handler-execution assertions. This removes per-request server/port churn; live smoke and CI still exercise real sockets. The earlier transient failures are not treated as passing validation; repeat the complete suite for the final head.
 - Complete the spec 1.5 request audit for rejected input and failures before service transactions. A controller-scoped interceptor logs verified identity, request id, operation, allowlisted PATCH field names and result/category. It never copies body values, arbitrary keys or exception messages, and includes a target only on success; existing service events retain target details after admission. Syntax/parser failures before authentication remain covered by the safe request-completion log. Unit and HTTP tests check refusal auditing and data omission.
+
+## D57: An idempotent deletion confirm is answered before the session check (2026-11-18)
+
+Spec 1.6 §1.3.2 step 2 checks the `Idempotency-Key` before access, CSRF and RBAC, because after acceptance the account is `deleting` and its cookie no longer authenticates. The author chose the spec-literal option over keeping the route fully protected.
+
+- A `@RequirePermission` route may add one `@Replay(name)`. The route guard asks the named matcher (`IdempotentReplays`, registered by the owning feature) before the chain. `replay` goes to the handler after CSRF and the route's IP limits (the receipt branch's treatment). `conflict` is `409 idempotency_conflict`. `none` runs the full chain. A route whose matcher isn't registered falls back to the full chain, so a wiring mistake never opens a route. `@Replay` without exactly one pair, twice, or next to `@Receipt` is a declaration conflict.
+- The deletion matcher only recognises a well-formed key whose job belongs to the path's user (UUID case ignored, as with ownership in D51). The handler repeats the same check, which also covers a job committed between the guard and the handler. The answer carries only `jobId`, `status` and `statusUrl`, the same data the receipt status endpoint returns for that key.
+- A malformed key, or a key with no job, runs the full chain first. Validation errors (400) therefore come after the session check, consistent with D51's "shared guard before validation".
+- The admin `DELETE` validates the path and the key (400) before the self check and `users@delete_any` (403), in the spec's step order. Neither reads the target.
+
+## D58: Deletion status branches and receipt errors (2026-11-18)
+
+- The author chose to answer a malformed `Deletion-Receipt` with the same `404 not_found` as an unknown or mismatched one, so probing learns nothing from the format check. A malformed `Idempotency-Key` on the writes stays `400`.
+- The guard decides the branch: with a non-empty receipt header it takes the receipt branch and never reads the cookie, so the handler sees no verified user and runs the self branch. Otherwise the chain sets the user and the handler runs the admin branch. An admin cookie sent with a receipt is ignored.
+- Self branch: the job's `user_id` must equal the path id exactly (no case folding), per "exact match" in §1.3.4. Admin branch: own id is `403 forbidden`, then `users@delete_any`, then path validation and the job lookup (404).
+- `finishedAt` is present on every answer and is non-null only for `succeeded`.
+
+## D59: The deletion acceptance transaction (2026-11-18)
+
+- Self: policy lock → user lock → the engine locks and checks the challenge, with `userEligible` = active, so method, consumption and TTL refusals come first and an inactive user consumes it as `user_inactive` (mapped to 401). An existing job under another key consumes the challenge as `job_exists` and is the 202 answer. Otherwise the challenge is claimed `confirmed` before acting (claim-then-act).
+- `accept()` inserts the job (`queued`, `attempts = 0`, `next_attempt_at = clock_timestamp()`, a random tombstone), sets `deleting`, deletes the user's roles, then runs the shared `assertRbacManagerRemains()`, bumps the RBAC version and consumes the user's other challenges. Registration, login and email-change challenges are consumed as `user_inactive`; an outstanding deletion challenge (admin path) as `job_exists`. The invariant runs after the status change, so the user no longer counts as an active holder. A refusal throws and rolls back everything, including the claim, so the challenge stays usable (§1.3.2 step 9: "without job and without status transition").
+- A concurrent insert of the same key for another user hits `pk_deletion_jobs` and becomes `409 idempotency_conflict`. One job per user can't race, because the user row is locked.
+- Admin: an existing job is locked after the user and returned. A `failed` one is requeued (attempts, lease and error reset, same tombstone) and logged as `deletion_admin_retry`. `deleting`/`deleted` without a job logs `deletion_consistency_violation` and answers 503.
+- Starting or resending a challenge while a job exists is `409 deletion_exists` (a new code; `challenge_conflict` means a consumed challenge). It is checked after the challenge lock, so the order stays user → challenge → job. An inactive user at challenge time consumes the outstanding challenge and gets 401, like email change (D52). Both reserve a `deletion_challenge_emails` slot (5 per user per hour, resends included) in the same transaction.
+
+## D60: The deletion worker (2026-11-18)
+
+- One `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED) RETURNING` claims a due `queued` job or a `running` one whose lease expired: `running`, `attempts + 1`, `lease_until = now + DELETION_WORKER_LEASE_SECONDS`, no `next_attempt_at`. Several instances can poll safely. Before claiming, a job with 5 starts whose lease expired becomes `failed` (`attempts_exhausted`); the claim filters `attempts < 5` (ck_deletion_jobs_attempts).
+- The erasers run outside any transaction. Every later write is fenced by `status = 'running' AND attempts = <claimed>`, so a run whose lease expired and was re-claimed changes nothing (`deletion_job_lease_lost`).
+- A failure goes to `queued` with `next_attempt_at = now + 60 s` and the safe code, or to `failed` at the 5th start or on `permanent_failure`. A final transaction that doesn't commit is `retryable_failure` (`finalize_failed`).
+- Finalization takes policy → user → job locks. `succeeded` plus `deleted` is an idempotent success. It requires `running` with our attempt and a `deleting` user, and a remaining `photo_key` is retryable (`photo_remaining`). It deletes all four challenge tables' rows, deletes leftover roles (bumping the RBAC version only if rows were removed), writes the tombstone and clears the PII, and marks the job `succeeded` with `finished_at`.
+- It polls every 5 s and does not start automatically when `NODE_ENV=test`; tests call `run()`. It touches storage only through the erasers, so it is safe next to an isolated smoke database.
+
+## D61: User-data erasers and their readiness check (2026-11-18)
+
+- `USER_DATA_OWNERS` (`src/modules/erasure/user-data-erasers.ts`) is the reviewed list of modules that store user data, like `RATE_LIMIT_POLICIES` for limits. The `user_data_erasers` readiness check is down while any listed owner has no registered eraser (spec 1.6 §1.6). Part 2 adds `transformations` to the list together with its eraser.
+- `eraseAll()` runs the erasers in registration order and stops at the first failure; the job is retried as a whole and every eraser is idempotent. A thrown error becomes `retryable_failure` with `eraser_error`, and a code outside `^[a-z][a-z0-9_]{0,63}$` is replaced by `eraser_failed`, so a library message never reaches `last_error_code`.
+- The profile eraser deletes the photo object (a missing one is success), then clears `photo_key` only if it is still that key and the user is `deleting`. It refuses (`permanent_failure`) for a user that isn't being deleted. `deleting` already blocks uploads and photo edits, and an in-flight upload that loses the race compensates its own object (D54).
+
+## D62: Deletion logs carry no ids (2026-11-18)
+
+- Spec 1.6 §1.5 keeps `jobId`, keys, receipts, actor and target ids out of deletion logs. Deletion events log only the operation, mode or branch, and a safe result code. The challenge engine already omitted deletion challenge ids (`logIds: false`).
+- The shared authorization steps (access check, RBAC decision, ownership) log the actor id for every other route. `logsIds(operation)` (`src/core/logging/id-redaction.ts`) omits it for operations of `UsersDeletionController` and `UsersDeletion`; the guard now passes its operation name to the authenticator.
+- The e2e leak check covers every log line of the deletion suite. Only lines from the requests it makes to other specs' routes (profile read, role assignment, re-registration) are exempt from the id check, matched by request id. Secrets, keys, emails, OTPs and tombstones are checked in every line.
+
+## D63: Role assignment refuses accounts being deleted (2026-11-18)
+
+Spec 1.6 requires role assignment to re-check the target status under the shared lock and reject `deleting` or `deleted`. `PUT /admin/rbac/users/{id}/roles` now does so with `409 conflict` after locking the user, so a deletion's role removal can't be undone while the worker runs.
