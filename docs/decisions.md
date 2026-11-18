@@ -442,3 +442,28 @@ Spec 2.0 says an error writes an `error` row, but steps 4–5 (multipart, size, 
 
 - `transformations` joins `USER_DATA_OWNERS`, and `TransformationsEraser` deletes the user's rows in batches of 1000 (spec 2.0 §1.3.4). C19 deletes stored objects before their rows. A database failure is `retryable_failure` (`history_unavailable`).
 - The table keeps only safe metadata. Formats are text with the pattern `^[a-z0-9]{1,16}$` (not an enum), so a new pair needs no migration (user story 3). Status and type are enums. A CHECK ties `success` to an output size and no error code, and `error` to a code and no output size. Sizes are `bigint`, and the index `(user_id, created_at, id)` serves spec 2.3's keyset pages. Storage columns arrive with spec 2.4 (C19).
+
+## D70: Text representation rules chosen by the author (2026-11-18)
+
+Spec 2.1 §1.3.2 leaves four rules open. The author chose:
+- **XML root:** JSON/YAML → XML needs a top-level object with exactly one key, which becomes the root element. An array, several keys or a scalar is `400` (`structure_mismatch`). XML → JSON/YAML returns the same shape, so XML ↔ JSON/YAML round-trips exactly. `@name` keys are attributes, `#text` the text and arrays repeated elements, as the spec says.
+- **XML → CSV:** only `<rows><row><field>…</field></row></rows>`, the shape CSV → XML writes. Each row needs flat text fields with the same names and no attributes or text of its own. Anything else, including an empty `<rows/>` (a CSV needs a header), is `structure_mismatch`.
+- **Values stay strings:** CSV and XML have no types, so `"007"`, `"1e3"` and `"true"` stay as written in JSON/YAML; nothing is guessed. JSON ↔ YAML keeps real types. JSON/YAML → CSV/XML writes numbers and booleans as text and `null` as an empty cell or element.
+- **MIME types:** each extension accepts its own types plus `application/octet-stream` and `text/plain`, which many clients send for any file. A clearly different type is 415. Content that doesn't parse is a 400, not a 415.
+
+## D71: How each format is read and written safely (2026-11-18)
+
+- **Encoding:** strict UTF-8 (`TextDecoder` with `fatal`); one leading BOM is dropped. Invalid bytes are `invalid_input`.
+- **CSV (papaparse 5.7.0):**
+  - The delimiter is fixed to `,`, so nothing is guessed, and blank lines are skipped.
+  - A header is required, with no empty or duplicate names. Every row must have exactly the header's fields; a quote error or field-count mismatch is `invalid_input`.
+  - Output quotes only where needed and doubles embedded quotes, with `\n` line endings and a final newline. Columns follow the first object's key order; every object must have the same key set and only scalar values.
+- **JSON:** `JSON.parse`, then `JSON.stringify` with 2-space indentation. Nesting deep enough to exhaust the stack is `invalid_input`, never a 500.
+- **YAML (yaml 2.9.1):** the safe loader means the 1.2 core schema, no custom tags and no merge keys. It accepts one document only, refuses duplicate keys, and refuses any warning (an unresolved tag such as `!!python/object` is one). Aliases are expanded at most 100 times. Values JSON can't hold (`.inf`, `.nan`) are `structure_mismatch`. Output disables aliases and line folding.
+- **XML (fast-xml-parser 5.12.0):** any `<!DOCTYPE` or `<!ENTITY` is refused before parsing (`unsafe_input`), because the parser expands internal DTD entities when it sees a DOCTYPE. Without a DTD only the five predefined entities exist, and nothing is ever fetched. The document must validate and have exactly one root (the parser alone accepts several). Values and attributes stay strings; comments, processing instructions and the declaration are dropped. Element and attribute names written must match `^[\p{L}_][\p{L}\p{N}_.:-]{0,199}$`, so a CSV header like `first name` can't become an element. Output is indented and escaped, with an XML declaration.
+
+## D72: Text endpoint limits and the save flag (2026-11-18)
+
+- `TEXT_CSV_MAX_BYTES`, `TEXT_JSON_MAX_BYTES`, `TEXT_XML_MAX_BYTES` and `TEXT_YAML_MAX_BYTES` default to 10 MiB (spec 2.1 §1.1). The result limit is a fixed 50 MiB. `TEXT_CONVERSION_TIMEOUT_MS` defaults to 30 s and is configurable, so tests can prove the 504 and operators can tune it.
+- `targetFormat` must be one of the four and differ from the source, which comes from the extension (`.yml` is YAML); otherwise 400. `save` must be `true` or `false` (400 otherwise) and is accepted now, but saving itself arrives with spec 2.4 (C19).
+- Each converter reads the whole input (at most its limit) and builds the result in memory inside its worker thread, then writes it at once. The worker's byte limit refuses an oversized result (413) without returning anything partial.
