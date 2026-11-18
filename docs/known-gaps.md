@@ -28,7 +28,7 @@ A running list of what's still outstanding. Check it before assuming something i
 - The confirm route's replay lookup (one primary-key read) runs before CSRF and IP limits (D64).
 
 ## Transformations (C15)
-- **Endpoints:** text conversion is live (C16). Images arrive in C17, history reads and retention in C18, saving and downloads in C19.
+- **Endpoints:** text (C16) and image (C17) conversion are live. History reads and retention arrive in C18, saving and downloads in C19.
 - The eraser deletes history rows only; stored objects join it in C19.
 - A worker thread has no `resourceLimits`: a library that allocates far more than its input is bounded by its timeout and the output limit, not by a memory cap. Native allocations (sharp, resvg) aren't covered by V8 limits anyway; C17 sets the libraries' own pixel limits.
 - The timeout includes time queued behind other conversions (D67). With `TRANSFORMATION_WORKER_THREADS=2`, more than two slow conversions at once can 504 sooner than their own work would.
@@ -41,6 +41,13 @@ A running list of what's still outstanding. Check it before assuming something i
 - Unknown XML entities (`&foo;`) are kept as literal text rather than refused; only the five predefined ones are decoded.
 - Each conversion holds its whole input and result in memory in one worker thread: at most a 10 MiB input and a 50 MiB result per conversion, times `TRANSFORMATION_WORKER_THREADS`.
 - During C16's gate, `users-read.e2e-spec.ts` (C12) failed once, right after a run in which the host stalled for several minutes. It passed in the 16 full runs that followed and couldn't be reproduced. Its timing-sensitive tests (the 2-second SQL timeout, the lock-wait check) are the likely cause.
+
+## Image conversion (C17)
+- **Text in SVGs:** the Alpine image ships no system fonts, so resvg draws no text. Shapes, paths and gradients render; `<text>` doesn't. Installing a font package in the Dockerfile would fix it.
+- `data:` URIs inside SVGs are refused (D74), so an SVG that embeds a bitmap as a data URI can't be converted.
+- The SVG check is structural (elements, attributes, `url()`, `@import`). CSS escape tricks could in principle hide a `url()` from it; resvg never fetches anything and every external reference is refused, so this is defence in depth.
+- resvg can't be interrupted mid-render, so an expensive SVG within the pixel limit runs to completion even past the timeout. The thread is then terminated, and the client still gets 504.
+- `save=true` is validated but not acted on until spec 2.4 (C19), as for text.
 
 ## Infrastructure
 - No CD. The course only requires a service called through an HTTP client.
