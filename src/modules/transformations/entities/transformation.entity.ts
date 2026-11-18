@@ -23,6 +23,8 @@ import {
  */
 @Entity('transformations')
 @Index('idx_transformations_user_created_at_id', ['userId', 'createdAt', 'id'])
+// Spec 2.3 §1.6: retention deletes old rows in small batches, across users.
+@Index('idx_transformations_created_at', ['createdAt'])
 @Check(
   'ck_transformations_formats',
   `"source_format" ~ '^[a-z0-9]{1,16}$' AND "target_format" ~ '^[a-z0-9]{1,16}$' AND "source_format" <> "target_format"`,
