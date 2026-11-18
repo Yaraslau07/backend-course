@@ -31,6 +31,7 @@ const xml = new XMLParser({
   textNodeName: '#text',
   parseTagValue: false,
   parseAttributeValue: false,
+  ignoreDeclaration: true,
 });
 
 beforeAll(async () => {
@@ -171,6 +172,19 @@ const EXPECTED: Record<string, unknown> = {
   yaml: TABLE,
   xml: { rows: { row: TABLE } },
 };
+/** XML needs one root (D70): JSON/YAML → XML starts from the rows/row tree, and XML → JSON/YAML returns it. */
+const TREE = { rows: { row: TABLE } };
+function inputFor(source: string, target: string) {
+  const input = SOURCES[source];
+  if (target !== 'xml' || (source !== 'json' && source !== 'yaml'))
+    return input;
+  return {
+    ...input,
+    content: source === 'json' ? JSON.stringify(TREE) : YAML.stringify(TREE),
+  };
+}
+const expectedFor = (source: string, target: string) =>
+  source === 'xml' && target !== 'csv' ? TREE : EXPECTED[target];
 const TYPES: Record<string, string> = {
   csv: 'text/csv; charset=utf-8',
   json: 'application/json; charset=utf-8',
@@ -221,7 +235,7 @@ describe('POST /api/convert: twelve directions (spec 2.1 §1.3.1)', () => {
 
   it.each(directions)('%s → %s', async (source, target) => {
     const actor = await actorWithRoles(app, ['user']);
-    const input = SOURCES[source];
+    const input = inputFor(source, target);
     const res = await convert(actor, input.name, input.content, target, {
       type: input.type,
     });
@@ -230,7 +244,7 @@ describe('POST /api/convert: twelve directions (spec 2.1 §1.3.1)', () => {
     expect(res.headers['content-disposition']).toBe(
       `attachment; filename="converted.${target}"`,
     );
-    expect(READ[target](res.body)).toEqual(EXPECTED[target]);
+    expect(READ[target](res.body)).toEqual(expectedFor(source, target));
     const [row] = await rows(actor.id);
     expect(row).toEqual({
       type: 'file',

@@ -15,6 +15,7 @@ const xml = new XMLParser({
   textNodeName: '#text',
   parseTagValue: false,
   parseAttributeValue: false,
+  ignoreDeclaration: true,
 });
 
 const codeOf = (run: () => unknown) => {

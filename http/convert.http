@@ -1,0 +1,68 @@
+# C16 (spec 2.1). Sign in with auth.http first: the HTTP client keeps the access cookie.
+# Needs transformations@convert (the `user` role has it). Results arrive as attachments.
+
+### The twelve directions: 200
+GET {{baseUrl}}/api/convert/formats
+
+### CSV → JSON: an array of objects; values stay strings
+POST {{baseUrl}}/api/convert
+Content-Type: multipart/form-data; boundary=b
+
+--b
+Content-Disposition: form-data; name="targetFormat"
+
+json
+--b
+Content-Disposition: form-data; name="file"; filename="people.csv"
+Content-Type: text/csv
+
+name,city
+Ada,"Zürich, CH"
+"""Bob""",Москва
+--b--
+
+### JSON → XML: a single-key object is the root; @attributes, #text, arrays repeat
+POST {{baseUrl}}/api/convert
+Content-Type: multipart/form-data; boundary=b
+
+--b
+Content-Disposition: form-data; name="targetFormat"
+
+xml
+--b
+Content-Disposition: form-data; name="file"; filename="order.json"
+Content-Type: application/json
+
+{"order": {"@id": "7", "item": ["a", "b"], "note": {"@lang": "en", "#text": "hi"}}}
+--b--
+
+### XML with a DTD: 400 invalid_file (no DTD, no external entities)
+POST {{baseUrl}}/api/convert
+Content-Type: multipart/form-data; boundary=b
+
+--b
+Content-Disposition: form-data; name="targetFormat"
+
+json
+--b
+Content-Disposition: form-data; name="file"; filename="xxe.xml"
+Content-Type: application/xml
+
+<!DOCTYPE a [<!ENTITY x SYSTEM "file:///etc/passwd">]><a>&x;</a>
+--b--
+
+### Same format as the source: 400
+POST {{baseUrl}}/api/convert
+Content-Type: multipart/form-data; boundary=b
+
+--b
+Content-Disposition: form-data; name="targetFormat"
+
+csv
+--b
+Content-Disposition: form-data; name="file"; filename="people.csv"
+Content-Type: text/csv
+
+a
+1
+--b--
