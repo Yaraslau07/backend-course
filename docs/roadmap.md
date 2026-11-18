@@ -17,9 +17,9 @@ The order the assignment is being built in, and why. Update the status column as
 | C10. RBAC | 1c | 1.1 | ✅ done |
 | C11. Authorization chain | 1c | 1.3 | ✅ done |
 | C12. View and list | 2 | 1.4, 1.7 | ✅ done (PR #13) |
-| C13. Update | 2 | 1.5 | ⏳ PR #14; awaiting review/merge |
-| C14. Delete | 2 | 1.6 | pending |
-| C15. Transformation framework | 3 | 2.0 | pending |
+| C13. Update | 2 | 1.5 | ✅ done (PR #14) |
+| C14. Delete | 2 | 1.6 | ⏳ PR #15; awaiting review/merge |
+| C15. Transformation framework | 3 | 2.0 | ⏭ next (after C14 merges) |
 | C16. Text | 3 | 2.1 | pending |
 | C17. Images | 3 | 2.2 | pending |
 | C18. History | 3 | 2.3 | pending |
@@ -170,9 +170,9 @@ The three features are independent of each other, but are built in order (C12 �
   - photo upload with sharp (WebP), clear photo
   - the storage adapter (local and S3/MinIO), the `storage_cleanup_jobs` worker and the orphan sweep
 
-C12 is merged. C13 PR #14 targets `main`; C14 starts after #14 is merged.
+C12 and C13 are merged.
 
-- **2c. Delete** (spec 1.6):
+- **2c. Delete** (spec 1.6; C14 implemented, D57–D63):
   - self deletion through the challenge engine; admin DELETE
   - `Idempotency-Key`
   - the `deleting` barrier

@@ -12,13 +12,21 @@ import { RBAC_NAME_PATTERN } from '@/modules/rbac/rbac.types';
  * - `@RequirePermission(permission, action)`: the full authorization chain;
  * - `@Receipt(header)`, optionally with one `@RequirePermission`: if the header is present the
  *   handler checks the receipt and access/RBAC don't run; if not, the pair's chain applies.
+ * A `@RequirePermission` route may add one `@Replay(name)`: before the chain, the named matcher
+ * may recognise an idempotent retry of an already accepted operation (spec 1.6 §1.3.2 step 2).
  * Anything else (nothing, two of them, a bad name) is invalid: readiness fails and the route
  * answers 503 without running.
  */
 export type RouteAccess =
   | { kind: 'public' }
   | { kind: 'internal' }
-  | { kind: 'protected'; permission: string; action: string }
+  | {
+      kind: 'protected';
+      permission: string;
+      action: string;
+      /** The idempotent-replay matcher consulted before the chain (`@Replay`). */
+      replay?: string;
+    }
   | {
       kind: 'receipt';
       header: string;
@@ -37,7 +45,8 @@ type Declaration =
   | { kind: 'public' }
   | { kind: 'internal' }
   | { kind: 'permission'; permission: string; action: string }
-  | { kind: 'receipt'; header: string };
+  | { kind: 'receipt'; header: string }
+  | { kind: 'replay'; name: string };
 
 export const ROUTE_ACCESS_METADATA = 'route-access:declarations';
 
@@ -79,6 +88,10 @@ export const RequirePermission = (
 export const Receipt = (header: string): MethodDecorator =>
   declare({ kind: 'receipt', header });
 
+/** Only next to one `@RequirePermission`; `name` is a matcher registered in `IdempotentReplays`. */
+export const Replay = (name: string): MethodDecorator =>
+  declare({ kind: 'replay', name });
+
 function isDeclaration(value: unknown): value is Declaration {
   if (typeof value !== 'object' || value === null) return false;
   const kind = (value as { kind?: unknown }).kind;
@@ -86,7 +99,8 @@ function isDeclaration(value: unknown): value is Declaration {
     kind === 'public' ||
     kind === 'internal' ||
     kind === 'permission' ||
-    kind === 'receipt'
+    kind === 'receipt' ||
+    kind === 'replay'
   );
 }
 
@@ -112,6 +126,7 @@ export function resolveRouteAccess(declarations: unknown): RouteAccess {
     declarations.filter((d) => d.kind === kind).length;
   const pairs = declarations.filter((d) => d.kind === 'permission');
   const receipts = declarations.filter((d) => d.kind === 'receipt');
+  const replays = declarations.filter((d) => d.kind === 'replay');
 
   if (declarations.length === 1 && count('public') === 1) {
     return { kind: 'public' };
@@ -124,7 +139,10 @@ export function resolveRouteAccess(declarations: unknown): RouteAccess {
     count('public') > 0 ||
     count('internal') > 0 ||
     pairs.length > 1 ||
-    receipts.length > 1
+    receipts.length > 1 ||
+    replays.length > 1 ||
+    // A replay answers for an operation the pair's chain would otherwise run.
+    (replays.length === 1 && (pairs.length !== 1 || receipts.length > 0))
   ) {
     return { kind: 'invalid', reason: 'conflict' };
   }
@@ -140,6 +158,12 @@ export function resolveRouteAccess(declarations: unknown): RouteAccess {
     return pair
       ? { kind: 'receipt', header: header.toLowerCase(), pair }
       : { kind: 'receipt', header: header.toLowerCase() };
+  }
+  if (replays.length === 1) {
+    if (!RBAC_NAME.test(replays[0].name)) {
+      return { kind: 'invalid', reason: 'invalid_name' };
+    }
+    return { kind: 'protected', ...pair!, replay: replays[0].name };
   }
   // Exactly one pair and nothing else.
   return { kind: 'protected', ...pair! };

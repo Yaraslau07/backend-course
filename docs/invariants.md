@@ -50,7 +50,7 @@ Shared semantics. Each scenario has **its own HMAC key**.
 
 access cookie → current user is `active` → CSRF (cross-origin writes) → IP and user rate limits → RBAC `permission@action` → (in the handler) `Ownership.selfOr` before the lookup → load resource → `Ownership.assertOwner` → business logic (D48).
 
-- Every route declares one of: `@Public()`; `@Internal()` (readiness only); exactly one `@RequirePermission(permission, action)`; `@Receipt(header)`, optionally with one pair. A missing or conflicting declaration, or a name that fails the RBAC pattern, fails readiness (`route_declarations`), and the route answers `503 authorization_unavailable` without running (D23, D24).
+- Every route declares one of: `@Public()`; `@Internal()` (readiness only); exactly one `@RequirePermission(permission, action)`, optionally with one `@Replay(name)` (an idempotent retry answered before the chain, D57); `@Receipt(header)`, optionally with one pair. A missing or conflicting declaration, or a name that fails the RBAC pattern, fails readiness (`route_declarations`), and the route answers `503 authorization_unavailable` without running (D23, D24).
 - A receipt route with the header present runs the handler, which checks the receipt; the cookie is not read. Without the header it follows the pair's chain, or answers `401 invalid_session` if it has no pair (D26).
 - CSRF (D27, D28): a write (`POST`, `PUT`, `PATCH`, `DELETE`) with an `Origin` other than the API's own needs that exact origin in `CORS_ORIGINS` and `X-CSRF-Protection: 1`, else `403 csrf_rejected`. No `Origin` passes (not a browser) unless `Sec-Fetch-Site` is `cross-site` or `same-site`. Public writes are checked in the route guard; protected ones after the active-user step.
 - The permission check comes **before** looking up the target. Without the right you get `403`, never `404`.
@@ -75,6 +75,8 @@ access cookie → current user is `active` → CSRF (cross-origin writes) → IP
 | 409 | `grant_exists` | a second grant for the same role and permission |
 | 409 | `resource_in_use` | RBAC: deleting a role with grants or users, a granted permission, or an action a grant lists |
 | 409 | `last_rbac_manager` | the change would leave no active user with `rbac@manage` |
+| 409 | `idempotency_conflict` | an `Idempotency-Key` already names a job for a different target |
+| 409 | `deletion_exists` | a deletion challenge is started or resent after the job exists |
 | 429 | `attempts_exhausted` | the 5th wrong OTP already consumed the challenge |
 | 429 | `resend_cooldown` | a new email within 60 s of the last send (`retryAfterSeconds`) |
 | 409 | `file_not_ready` | download while `storageStatus=pending` |
@@ -142,5 +144,7 @@ email (cleartext), password, password hash, OTP, magic-link token, HMAC, JWT, `C
 ## Background work
 
 No external broker: jobs are DB rows claimed with `UPDATE … RETURNING` (or `FOR UPDATE SKIP LOCKED`) under a lease. Every eraser and storage delete is idempotent, and `not_found` counts as success.
+
+Deletion (C14) claims one `queued` or lease-expired `running` job at a time, sets a lease and counts the start, runs every registered eraser, and fences each later write by the claimed `attempts` (D60). Every module that stores user data is listed in `USER_DATA_OWNERS` and registers an eraser, or readiness fails (D61).
 
 Storage cleanup (C13) uses a transaction-held `SKIP LOCKED` row lock through the bounded delete instead of a persisted lease/running state. Reconciliation checks the same database's photo references and coordinates with pending adoption using a shared/exclusive transaction advisory lock (D53). Never pair automatic reconciliation with a temporary/unrelated reference database.

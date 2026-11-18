@@ -26,6 +26,6 @@ import { TokenService } from './tokens/token.service';
     SessionService,
   ],
   // The route guard (core/authorization) runs the access check on every protected route.
-  exports: [PasswordHasher, AccessAuthenticator],
+  exports: [PasswordHasher, AccessAuthenticator, AuthCookies],
 })
 export class AuthModule {}

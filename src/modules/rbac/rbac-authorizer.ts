@@ -3,6 +3,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, type EntityManager } from 'typeorm';
 
 import { AppException } from '@/core/errors/app.exception';
+import { logsIds } from '@/core/logging/id-redaction';
 import { classifyDbError } from '@/core/errors/db-errors';
 
 import { RbacPolicyStore } from './rbac-policy.store';
@@ -77,7 +78,7 @@ export class RbacAuthorizer {
           event: 'rbac_decision',
           result: 'unavailable',
           category: 'users',
-          actorUserId: userId,
+          ...(logsIds(operation) ? { actorUserId: userId } : {}),
           operation,
         },
         'user roles unavailable',
@@ -87,7 +88,7 @@ export class RbacAuthorizer {
 
     const decision = snapshot.allows(roleIds, permission, action);
     const fields = {
-      actorUserId: userId,
+      ...(logsIds(operation) ? { actorUserId: userId } : {}),
       operation,
       permission,
       action,

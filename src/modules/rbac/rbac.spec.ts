@@ -758,7 +758,7 @@ describe('RbacAdminService', () => {
 
   describe('user roles', () => {
     it('answers an unknown user with 404 on read and on replace', async () => {
-      const { service } = setup([[/SELECT id FROM users/, []]]);
+      const { service } = setup([[/SELECT id(, status)? FROM users/, []]]);
 
       expect(await codeOf(() => service.getUserRoles(USER))).toBe('not_found');
       expect(await codeOf(() => service.replaceUserRoles(USER, USER, []))).toBe(
@@ -768,7 +768,7 @@ describe('RbacAdminService', () => {
 
     it('answers an unknown role with 404', async () => {
       const { service } = setup([
-        [/SELECT id FROM users/, [{ id: USER }]],
+        [/SELECT id(, status)? FROM users/, [{ id: USER, status: 'active' }]],
         [/count\(\*\)::int AS count FROM roles/, [{ count: 0 }]],
       ]);
 
@@ -777,9 +777,21 @@ describe('RbacAdminService', () => {
       ).toBe('not_found');
     });
 
+    it.each(['deleting', 'deleted'])(
+      'refuses roles for a %s user with 409 (spec 1.6)',
+      async (status) => {
+        const { service } = setup([
+          [/SELECT id, status FROM users/, [{ id: USER, status }]],
+        ]);
+        expect(
+          await codeOf(() => service.replaceUserRoles(USER, USER, [ROLE])),
+        ).toBe('conflict');
+      },
+    );
+
     it('replaces the roles and returns them', async () => {
       const { service } = setup([
-        [/SELECT id FROM users/, [{ id: USER }]],
+        [/SELECT id(, status)? FROM users/, [{ id: USER, status: 'active' }]],
         [/count\(\*\)::int AS count FROM roles/, [{ count: 1 }]],
         [/SELECT role_id FROM user_roles/, [{ role_id: ROLE }]],
       ]);

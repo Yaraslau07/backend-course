@@ -13,6 +13,7 @@ import { AccessAuthenticator } from '@/modules/auth/access-authenticator';
 import { RbacAuthorizer } from '@/modules/rbac/rbac-authorizer';
 
 import { CsrfPolicy } from './csrf';
+import { IdempotentReplays } from './idempotent-replay';
 import { getRouteAccess } from './route-access';
 
 /**
@@ -30,6 +31,7 @@ export class RouteAccessGuard implements CanActivate {
     private readonly limiter: RateLimiter,
     private readonly authenticator: AccessAuthenticator,
     private readonly authorizer: RbacAuthorizer,
+    private readonly replays: IdempotentReplays,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -59,6 +61,11 @@ export class RouteAccessGuard implements CanActivate {
       }
 
       case 'protected':
+        if (
+          access.replay &&
+          (await this.isReplay(context, request, access.replay))
+        )
+          return true;
         return this.protectedChain(context, request, access);
 
       case 'invalid':
@@ -89,7 +96,7 @@ export class RouteAccessGuard implements CanActivate {
     pair: { permission: string; action: string },
   ): Promise<true> {
     const operation = this.handlerName(context);
-    const userId = await this.authenticator.authenticate(request);
+    const userId = await this.authenticator.authenticate(request, operation);
     this.csrf.assert(request, operation);
     for (const policy of getRouteRateLimits(context.getHandler()).user) {
       await this.limiter.enforce(policy, [userId]);
@@ -101,6 +108,24 @@ export class RouteAccessGuard implements CanActivate {
       pair.action,
       operation,
     );
+    return true;
+  }
+
+  /**
+   * Spec 1.6 §1.3.2 step 2: an idempotent retry of an accepted operation is answered before the
+   * session is checked (the account may no longer authenticate). It gets the receipt branch's CSRF
+   * and IP limits; a key that belongs to another target is a 409; anything else runs the chain.
+   */
+  private async isReplay(
+    context: ExecutionContext,
+    request: FastifyRequest,
+    name: string,
+  ): Promise<boolean> {
+    const verdict = await this.replays.check(name, request);
+    if (verdict === 'none') return false;
+    this.csrf.assert(request, this.handlerName(context));
+    await this.enforceIpLimits(context, request);
+    if (verdict === 'conflict') throw new AppException('idempotency_conflict');
     return true;
   }
 

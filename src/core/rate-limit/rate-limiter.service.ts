@@ -24,16 +24,23 @@ const CLEANUP_BATCH = 1000;
  * The hits of the existing row still inside the window, oldest first, capped at the newest $3.
  * $3 is the limit, $4 the window in seconds.
  */
-const LIVE_HITS = `ARRAY(
+/**
+ * `clock` is `now()` for a standalone call, or `statement_timestamp()` inside a caller's
+ * transaction, whose `now()` is the transaction start and may predate its lock waits (D54).
+ */
+type Clock = 'now()' | 'statement_timestamp()';
+
+const liveHits = (clock: Clock) => `ARRAY(
   SELECT h FROM (
     SELECT h FROM unnest(r.hits) AS h
-     WHERE h > now() - make_interval(secs => $4)
+     WHERE h > ${clock} - make_interval(secs => $4)
      ORDER BY h DESC
      LIMIT $3
   ) AS newest ORDER BY h
 )`;
 
-const RETRY_AFTER = `GREATEST(1, ceil(extract(epoch FROM (hits[1] + make_interval(secs => $4) - now()))))::int`;
+const retryAfter = (clock: Clock) =>
+  `GREATEST(1, ceil(extract(epoch FROM (hits[1] + make_interval(secs => $4) - ${clock}))))::int`;
 
 interface Row {
   allowed: boolean;
@@ -63,22 +70,21 @@ export class RateLimiter {
     parts: string[],
     manager: Pick<EntityManager, 'query'> = this.db,
   ): Promise<RateLimitResult> {
+    const clock: Clock =
+      manager === this.db ? 'now()' : 'statement_timestamp()';
     const rows = await manager.query<Row[]>(
       `INSERT INTO rate_limits AS r (bucket, key, hits, last_allowed, expires_at)
-       VALUES ($1, $2, ARRAY[now()], true, now() + make_interval(secs => $4))
+       VALUES ($1, $2, ARRAY[${clock}], true, ${clock} + make_interval(secs => $4))
        ON CONFLICT (bucket, key) DO UPDATE SET (last_allowed, hits, expires_at) = (
          SELECT cardinality(live) < $3,
-                CASE WHEN cardinality(live) < $3 THEN live || now() ELSE live END,
+                CASE WHEN cardinality(live) < $3 THEN live || ${clock} ELSE live END,
                 -- When the newest stored hit leaves the window; a refusal adds no hit.
-                CASE WHEN cardinality(live) < $3 THEN now() ELSE live[cardinality(live)] END
+                CASE WHEN cardinality(live) < $3 THEN ${clock} ELSE live[cardinality(live)] END
                   + make_interval(secs => $4)
-           FROM (SELECT ${LIVE_HITS} AS live) AS current
+           FROM (SELECT ${liveHits(clock)} AS live) AS current
        )
        RETURNING last_allowed AS allowed,
-                 CASE WHEN last_allowed THEN 0 ELSE ${RETRY_AFTER} END AS retry_after`.replaceAll(
-        'now()',
-        manager === this.db ? 'now()' : 'statement_timestamp()',
-      ),
+                 CASE WHEN last_allowed THEN 0 ELSE ${retryAfter(clock)} END AS retry_after`,
       this.params(policy, parts),
     );
     return this.result(rows[0]);
@@ -91,8 +97,8 @@ export class RateLimiter {
   ): Promise<RateLimitResult> {
     const rows = await this.db.query<Row[]>(
       `SELECT cardinality(hits) < $3 AS allowed,
-              CASE WHEN cardinality(hits) < $3 THEN 0 ELSE ${RETRY_AFTER} END AS retry_after
-         FROM (SELECT ${LIVE_HITS} AS hits FROM rate_limits AS r
+              CASE WHEN cardinality(hits) < $3 THEN 0 ELSE ${retryAfter('now()')} END AS retry_after
+         FROM (SELECT ${liveHits('now()')} AS hits FROM rate_limits AS r
                 WHERE r.bucket = $1 AND r.key = $2) AS live`,
       this.params(policy, parts),
     );
