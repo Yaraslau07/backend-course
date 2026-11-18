@@ -17,6 +17,7 @@ import { ChallengesModule } from '@/modules/challenges/challenges.module';
 import { RbacModule } from '@/modules/rbac/rbac.module';
 import { UsersModule } from '@/modules/users/users.module';
 import { TransformationsModule } from '@/modules/transformations/transformations.module';
+import { TextConversionModule } from '@/modules/text-conversion/text-conversion.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { TransformationsModule } from '@/modules/transformations/transformations
     RbacModule,
     UsersModule,
     TransformationsModule,
+    TextConversionModule,
     AuthModule,
   ],
 })

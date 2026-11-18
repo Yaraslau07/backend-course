@@ -28,12 +28,19 @@ A running list of what's still outstanding. Check it before assuming something i
 - The confirm route's replay lookup (one primary-key read) runs before CSRF and IP limits (D64).
 
 ## Transformations (C15)
-- **No public endpoint yet.** The framework is exercised by a test-only probe route; `POST /api/convert` and its formats list arrive in C16, images in C17, history reads and retention in C18, saving and downloads in C19.
+- **Endpoints:** text conversion is live (C16). Images arrive in C17, history reads and retention in C18, saving and downloads in C19.
 - The eraser deletes history rows only; stored objects join it in C19.
 - A worker thread has no `resourceLimits`: a library that allocates far more than its input is bounded by its timeout and the output limit, not by a memory cap. Native allocations (sharp, resvg) aren't covered by V8 limits anyway; C17 sets the libraries' own pixel limits.
 - The timeout includes time queued behind other conversions (D67). With `TRANSFORMATION_WORKER_THREADS=2`, more than two slow conversions at once can 504 sooner than their own work would.
 - The result's name is removed as soon as it is opened (POSIX semantics, D68). A Windows host would need a different cleanup.
 - A database without a `user` role (a fresh deployment, or an un-bootstrapped dev database) reports `transformations: down`, so `/health/ready` is 503 until RBAC is bootstrapped; the seed waits for that start (D66). Liveness and the Docker `HEALTHCHECK` are unaffected.
+
+## Text conversion (C16)
+- `save=true` is validated but not acted on yet: no copy is kept and there is no `X-Save-Status` header until spec 2.4 (C19).
+- CSV output doesn't neutralise spreadsheet formulas (a cell starting with `=`, `+`, `-` or `@`); the spec asks for faithful conversion, and the result is a download, not a rendered page.
+- Unknown XML entities (`&foo;`) are kept as literal text rather than refused; only the five predefined ones are decoded.
+- Each conversion holds its whole input and result in memory in one worker thread: at most a 10 MiB input and a 50 MiB result per conversion, times `TRANSFORMATION_WORKER_THREADS`.
+- During C16's gate, `users-read.e2e-spec.ts` (C12) failed once, right after a run in which the host stalled for several minutes. It passed in the 16 full runs that followed and couldn't be reproduced. Its timing-sensitive tests (the 2-second SQL timeout, the lock-wait check) are the likely cause.
 
 ## Infrastructure
 - No CD. The course only requires a service called through an HTTP client.

@@ -149,6 +149,14 @@ export const cursorKeyRing = () =>
 
 const method = () => Joi.string().valid('otp', 'magic_link').default('otp');
 
+/** A text input limit: 1 byte to 50 MiB (the result limit), default 10 MiB (spec 2.1 §1.1). */
+const textLimit = () =>
+  Joi.number()
+    .integer()
+    .min(1)
+    .max(50 * 1024 * 1024)
+    .default(10 * 1024 * 1024);
+
 export const configSchema = Joi.object<AppConfig>({
   /* Server */
   NODE_ENV: Joi.string().valid('development', 'test', 'production').required(),
@@ -211,6 +219,15 @@ export const configSchema = Joi.object<AppConfig>({
     .max(3600)
     .default(300),
   TRANSFORMATION_TEMP_DIR: Joi.string().allow('').default(''),
+  TEXT_CSV_MAX_BYTES: textLimit(),
+  TEXT_JSON_MAX_BYTES: textLimit(),
+  TEXT_XML_MAX_BYTES: textLimit(),
+  TEXT_YAML_MAX_BYTES: textLimit(),
+  TEXT_CONVERSION_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1)
+    .max(120_000)
+    .default(30_000),
   TRANSFORMATION_WORKER_THREADS: Joi.number()
     .integer()
     .min(1)
