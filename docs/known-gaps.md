@@ -33,7 +33,7 @@ A running list of what's still outstanding. Check it before assuming something i
 - A worker thread has no `resourceLimits`: a library that allocates far more than its input is bounded by its timeout and the output limit, not by a memory cap. Native allocations (sharp, resvg) aren't covered by V8 limits anyway; C17 sets the libraries' own pixel limits.
 - The timeout includes time queued behind other conversions (D67). With `TRANSFORMATION_WORKER_THREADS=2`, more than two slow conversions at once can 504 sooner than their own work would.
 - The result's name is removed as soon as it is opened (POSIX semantics, D68). A Windows host would need a different cleanup.
-- A database without a `user` role (like an un-bootstrapped dev database) reports `transformations: down`, and the seed waits for a later start (D66).
+- A database without a `user` role (a fresh deployment, or an un-bootstrapped dev database) reports `transformations: down`, so `/health/ready` is 503 until RBAC is bootstrapped; the seed waits for that start (D66). Liveness and the Docker `HEALTHCHECK` are unaffected.
 
 ## Infrastructure
 - No CD. The course only requires a service called through an HTTP client.
