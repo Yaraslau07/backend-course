@@ -20,7 +20,7 @@ The order the assignment is being built in, and why. Update the status column as
 | C13. Update | 2 | 1.5 | ✅ done (PR #14) |
 | C14. Delete | 2 | 1.6 | ✅ done (PR #15) |
 | C15. Transformation framework | 3 | 2.0 | ✅ done (PR #16) |
-| C16. Text | 3 | 2.1 | ⏳ PR open; awaiting review/merge |
+| C16. Text | 3 | 2.1 | ⏳ PR #17; awaiting review/merge |
 | C17. Images | 3 | 2.2 | pending |
 | C18. History | 3 | 2.3 | pending |
 | C19. Storage | 3 | 2.4 | pending |
