@@ -277,14 +277,23 @@ function withDefaultViewport(text: string): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${DEFAULT_SVG_SIDE}" height="${DEFAULT_SVG_SIDE}">${body}</svg>`;
 }
 
-const RESVG_BASE: ResvgRenderOptions = {
-  logLevel: 'off',
-  font: { loadSystemFonts: true },
-};
+const RESVG_BASE: ResvgRenderOptions = { logLevel: 'off' };
 
-function load(text: string, fitTo?: ResvgRenderOptions['fitTo']): Resvg {
+/**
+ * `fonts: false` skips scanning the system font database: the size pass only reads the document's
+ * own width, height and viewBox, so text never changes it (D80).
+ */
+function load(
+  text: string,
+  fitTo?: ResvgRenderOptions['fitTo'],
+  fonts = true,
+): Resvg {
   try {
-    return new Resvg(text, { ...RESVG_BASE, ...(fitTo ? { fitTo } : {}) });
+    return new Resvg(text, {
+      ...RESVG_BASE,
+      font: { loadSystemFonts: fonts },
+      ...(fitTo ? { fitTo } : {}),
+    });
   } catch {
     return fail('invalid_input');
   }
@@ -305,7 +314,7 @@ async function convertSvg(
   const text = checked.intrinsic
     ? checked.text
     : withDefaultViewport(checked.text);
-  const natural = load(text);
+  const natural = load(text, undefined, false);
   const w0 = natural.width;
   const h0 = natural.height;
   if (!(w0 > 0 && h0 > 0)) fail('invalid_input');

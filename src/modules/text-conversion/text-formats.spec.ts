@@ -192,10 +192,21 @@ describe('JSON as the source', () => {
     ['a nested array', { a: { b: [[1]] } }],
     ['an object attribute', { a: { '@x': { y: 1 } } }],
     ['an object as #text', { a: { '#text': { y: 1 } } }],
+    ['a control character XML 1.0 cannot hold', { a: 'x\u0001y' }],
+    ['a NUL in an attribute', { a: { '@x': 'a\u0000b' } }],
+    ['a lone surrogate', { a: 'x\ud800y' }],
   ])('json → xml refuses %s (structure_mismatch)', (_name, value) => {
     expect(codeOf(() => convert('json', 'xml', JSON.stringify(value)))).toBe(
       'structure_mismatch',
     );
+  });
+
+  it('tabs, newlines, non-BMP characters and other legal text still convert to XML', () => {
+    const out = convert('json', 'xml', JSON.stringify({ a: 'tab\tnl\n😀 é' }));
+    expect(out).toContain('😀');
+    expect(JSON.parse(convert('xml', 'json', out)) as unknown).toEqual({
+      a: 'tab\tnl\n😀 é',
+    });
   });
 
   it('bad syntax and absurd nesting are invalid_input', () => {

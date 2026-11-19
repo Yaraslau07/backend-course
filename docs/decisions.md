@@ -568,3 +568,22 @@ After C18 merged, the author asked for every checkpoint of the session to be che
 
 **C19 review (code review, Phase 3 range `22d2b8f...HEAD`).** Fixed in the `fix:` commit: (1) the old-rows sweep deleted up to 500 objects over the network inside one transaction; it now deletes at most 50 objects per batch (`OBJECT_BATCH`) and takes the rest in the next batch; (2) retention now honours `STORAGE_WORKERS_ENABLED=false` like the worker and the cleanup, so an isolated smoke test never sweeps a persistent bucket. Already recorded as limits: the per-instance pending copy and the eraser's unbounded run against the deletion lease (D64, known-gaps). Not C19 and left for the C20 audit: SVG text rendering builds `Resvg` twice per conversion, CSV formula cells and XML-illegal control characters, and an empty-CSV round trip. A 412 from S3 is accepted as `stored` without comparing bytes; the key is random (D55), so only an earlier attempt of the same write can hold it. `TRANSFORMATION_HISTORY_RETENTION_DAYS` below `TRANSFORMATION_STORED_FILE_RETENTION_DAYS` makes history retention end saved files early, as D79 says.
 
+## D80: Final audit (C20) (2026-11-19)
+
+The whole project was checked once more against `docs/specs/` after C19 merged.
+
+**Checked, no change needed**
+- **Routes:** all 43 routes named in the specs exist, and every controller route has exactly one access declaration (`@Public`, `@Internal`, `@RequirePermission`, or `@Receipt` with one pair).
+- **Gate on `main`:** lint (no warnings), typecheck, build, `migration:check` (no drift), 1102 unit tests at 91.6% statements / 87.0% branches, all 22 e2e suites (676 tests).
+- **Reviews:** `/code-review` and `/security-review` ran at the end of each phase (C1, C6, C11, C14, C19); the C19 pair covered all of Phase 3 (D79).
+- **Dependencies:** `npm audit --omit=dev` reports three moderate findings, all in typeorm's nested `glob`/`minimatch` (a pattern-amplification issue). typeorm only evaluates our own entity and migration globs there, never request data, and CI fails only at `high`. Accepted until typeorm updates them.
+
+**Fixed in C20** (found by the C19 code review, but belonging to C16/C17)
+- **XML 1.0 can't carry most control characters** (not even as entities) or lone surrogates. JSON, YAML and CSV text containing them used to become an XML file that our own reader refuses. They are now `structure_mismatch` (400) at write time; tabs, newlines and non-BMP characters still convert.
+- **The SVG size pass no longer scans system fonts.** Width and height come only from the document's `width`, `height` and `viewBox` (or the 1024-pixel viewport, D74), so text never changes them. Only the render pass loads fonts.
+
+**Left as they are, deliberately**
+- **CSV formula cells** (`=`, `+`, `-`, `@`) are written as given: spec 2.1 asks for a faithful conversion and the result is a download. Recorded since C16.
+- **XML → CSV and XML → JSON trim leading and trailing whitespace** of element text (the parser's `trimValues`); whitespace inside a value is kept. This also keeps indented XML from adding padding to values.
+- **A header-only CSV converts to `<rows/>`, which doesn't convert back** to CSV: D70 makes an empty `<rows/>` `structure_mismatch` because a CSV needs a header.
+
