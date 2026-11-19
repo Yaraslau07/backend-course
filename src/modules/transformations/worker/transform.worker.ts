@@ -20,7 +20,14 @@ export interface TransformTask {
 }
 
 export type TransformResult =
-  | { ok: true; contentType: string; extension: string; size: number }
+  | {
+      ok: true;
+      contentType: string;
+      extension: string;
+      size: number;
+      width?: number;
+      height?: number;
+    }
   | { ok: false; code: ConversionErrorCode };
 
 /** A media type, optionally with a charset; nothing that could break a header. */
@@ -66,6 +73,20 @@ function load(module: string): Converter {
     converters.set(module, converter);
   }
   return converter;
+}
+
+/** Pixel dimensions are logged (spec 2.2 §1.5) only when they're sane integers. */
+function dimensions(outcome: { width?: unknown; height?: unknown }): {
+  width?: number;
+  height?: number;
+} {
+  const { width, height } = outcome;
+  return Number.isSafeInteger(width) &&
+    Number.isSafeInteger(height) &&
+    (width as number) > 0 &&
+    (height as number) > 0
+    ? { width: width as number, height: height as number }
+    : {};
 }
 
 const failure = (code: ConversionErrorCode): TransformResult => ({
@@ -134,5 +155,6 @@ export default async function transform(
     contentType: outcome.contentType,
     extension: outcome.extension,
     size: limiter.bytes,
+    ...dimensions(outcome),
   };
 }

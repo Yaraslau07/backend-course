@@ -40,6 +40,22 @@ describe('S3 storage boundary', () => {
       IfNoneMatch: '*',
     });
   });
+  it('takes a content type, and a repeated write of the same key is stored again', async () => {
+    expect(
+      await storage.write(
+        'opaque',
+        Buffer.from('x'),
+        'text/csv; charset=utf-8',
+      ),
+    ).toBe('stored');
+    expect(
+      ((send.mock.calls as unknown[][])[0][0] as { input: unknown }).input,
+    ).toMatchObject({ ContentType: 'text/csv; charset=utf-8' });
+    send.mockRejectedValueOnce({ $metadata: { httpStatusCode: 412 } });
+    expect(await storage.write('opaque', Buffer.from('x'))).toBe('stored');
+    send.mockRejectedValueOnce({ $metadata: { httpStatusCode: 500 } });
+    expect(await storage.write('opaque', Buffer.from('x'))).toBe('unavailable');
+  });
   it('returns a stream without buffering an object', async () => {
     const stream = Readable.from('photo');
     send.mockResolvedValue({ Body: stream });

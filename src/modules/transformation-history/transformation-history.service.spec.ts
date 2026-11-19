@@ -19,6 +19,9 @@ const row = (n: number) => ({
   duration_ms: 3,
   error_code: null,
   created_at: new Date(Date.UTC(2026, 10, 10 - n)),
+  storage_status: 'not_requested' as const,
+  stored_file_until: null,
+  live: false,
 });
 
 function setup(rows: unknown[], user: unknown[] = [{ id: USER }]) {

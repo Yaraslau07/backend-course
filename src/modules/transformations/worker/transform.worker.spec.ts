@@ -31,6 +31,18 @@ async function task(
 }
 
 describe('transform() worker task (spec 2.0 §1.3.1)', () => {
+  it('passes on a reported result size, and drops one that is not a positive integer', async () => {
+    expect(await transform(await task({ mode: 'dims' }))).toMatchObject({
+      ok: true,
+      width: 7,
+      height: 9,
+    });
+    const odd = await transform(await task({ mode: 'bad_dims' }));
+    expect(odd).toMatchObject({ ok: true });
+    expect(odd).not.toHaveProperty('width');
+    expect(odd).not.toHaveProperty('height');
+  });
+
   it('runs the converter on the streams and reports the real size', async () => {
     const t = await task({}, 'hello');
     expect(await transform(t)).toEqual({

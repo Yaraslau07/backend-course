@@ -241,6 +241,11 @@ export const configSchema = Joi.object<AppConfig>({
     .min(1)
     .max(3650)
     .default(90),
+  TRANSFORMATION_STORED_FILE_RETENTION_DAYS: Joi.number()
+    .integer()
+    .min(1)
+    .max(3650)
+    .default(90),
   TRANSFORMATION_WORKER_THREADS: Joi.number()
     .integer()
     .min(1)

@@ -48,6 +48,7 @@ describe('imageOperation() (spec 2.2 §1.3.1)', () => {
     ).toEqual({
       source: 'svg',
       target: 'jpeg',
+      save: false,
       params: {
         source: 'svg',
         target: 'jpeg',
@@ -55,6 +56,9 @@ describe('imageOperation() (spec 2.2 §1.3.1)', () => {
         timeoutSeconds: 29,
       },
     });
+    expect(
+      op.resolve(upload('png', { targetFormat: 'jpeg', save: 'true' })).save,
+    ).toBe(true);
     expect(
       imageOperation({ png: 1, jpeg: 1, svg: 1 }, 500).resolve(
         upload('png', { targetFormat: 'jpeg' }),

@@ -94,3 +94,49 @@ describe('TempArea (spec 2.0 §1.3.4)', () => {
     expect(await broken.check()).toEqual({ down: 'unavailable' });
   });
 });
+
+describe('TempArea pending copies (spec 2.4 §1.3.1)', () => {
+  it('keeps a private copy under a random 128-bit key, reads it and removes it', async () => {
+    const root = join(base, 'keep');
+    const { instance } = area(root);
+    await instance.onModuleInit();
+    const source = instance.path();
+    await writeFile(source, 'result bytes');
+
+    const key = await instance.keep(source);
+    expect(key).toMatch(/^[0-9a-f]{32}$/);
+    expect(await readdir(join(root, 'pending'))).toEqual([key]);
+    expect((await stat(join(root, 'pending'))).mode & 0o777).toBe(0o700);
+    expect((await instance.readPending(key as string))?.toString()).toBe(
+      'result bytes',
+    );
+
+    await instance.removePending(key as string);
+    expect(await instance.readPending(key as string)).toBeNull();
+    await instance.removePending(key as string); // idempotent
+  });
+
+  it('refuses names that are not its own, and reports a failed copy as null', async () => {
+    const { instance } = area(join(base, 'bad'));
+    await instance.onModuleInit();
+    expect(await instance.readPending('../escape')).toBeNull();
+    await expect(instance.removePending('../escape')).resolves.toBeUndefined();
+    expect(await instance.keep(join(base, 'missing-source'))).toBeNull();
+    expect(await readdir(join(base, 'bad', 'pending'))).toEqual([]);
+  });
+
+  it('sweeps copies a day old at start and leaves recent ones', async () => {
+    const root = join(base, 'sweep');
+    const first = area(root).instance;
+    await first.onModuleInit();
+    const source = first.path();
+    await writeFile(source, 'x');
+    const old = (await first.keep(source)) as string;
+    const recent = (await first.keep(source)) as string;
+    const past = new Date(Date.now() - 25 * 3600 * 1000);
+    await utimes(join(root, 'pending', old), past, past);
+
+    await area(root).instance.onModuleInit();
+    expect(await readdir(join(root, 'pending'))).toEqual([recent]);
+  });
+});

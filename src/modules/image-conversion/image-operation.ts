@@ -124,6 +124,7 @@ export function imageOperation(
       return {
         source,
         target,
+        save: fields.save === 'true',
         // The library's own timeout fires a little before the pool's, so it stops cleanly.
         params: {
           source,

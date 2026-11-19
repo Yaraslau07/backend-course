@@ -77,7 +77,12 @@ export function textOperation(limits: TextLimits): ConversionOperation {
         fields.save !== 'false'
       )
         throw new AppException('bad_request');
-      return { source, target, params: { source, target } };
+      return {
+        source,
+        target,
+        params: { source, target },
+        save: fields.save === 'true',
+      };
     },
   };
 }

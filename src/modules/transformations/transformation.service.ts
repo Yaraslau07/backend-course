@@ -31,6 +31,8 @@ export interface ConversionRequest {
   target: string;
   params: Record<string, unknown>;
   input: UploadedFile;
+  /** Spec 2.4: keep a copy of a successful result for the background write. */
+  save?: boolean;
 }
 
 export interface ConversionResult {
@@ -39,7 +41,11 @@ export interface ConversionResult {
   contentType: string;
   extension: string;
   size: number;
+  /** `X-Save-Status` (spec 2.4 §1.3.1). */
+  saveStatus: SaveStatus;
 }
+
+export type SaveStatus = 'not_requested' | 'pending' | 'error';
 
 /** What an endpoint (specs 2.1, 2.2) supplies: its upload rules and how to read the request. */
 export interface ConversionOperation extends UploadRules {
@@ -49,6 +55,8 @@ export interface ConversionOperation extends UploadRules {
     source: string;
     target: string;
     params: Record<string, unknown>;
+    /** `save=true` (spec 2.4 §1.3.1); a missing field is false. */
+    save?: boolean;
   };
 }
 
@@ -76,7 +84,7 @@ export class TransformationService {
   ): Promise<StreamableFile> {
     const upload = await readUpload(request, this.temp, operation);
     try {
-      const { source, target, params } = operation.resolve(upload);
+      const { source, target, params, save } = operation.resolve(upload);
       const result = await this.convert({
         userId,
         type: operation.type,
@@ -84,6 +92,7 @@ export class TransformationService {
         target,
         params,
         input: upload.file,
+        save,
       });
       return await this.respond(reply, result);
     } finally {
@@ -121,6 +130,14 @@ export class TransformationService {
       result = { ok: false, code: 'converter_failed' };
     }
     const durationMs = Math.round(performance.now() - started);
+    // Spec 2.4 §1.3.1 step 2: a copy of a successful result, before the response is built. If it
+    // can't be made the file is still returned and the history says `error`.
+    let storedKey: string | null = null;
+    let saveStatus: SaveStatus = 'not_requested';
+    if (request.save && result.ok) {
+      storedKey = await this.temp.keep(outputPath);
+      saveStatus = storedKey ? 'pending' : 'error';
+    }
     const outputSize = result.ok ? result.size : null;
     const errorCode = result.ok ? null : result.code;
     const fields = {
@@ -132,14 +149,20 @@ export class TransformationService {
       outputSize,
       errorCode,
       durationMs,
+      ...(result.ok && result.width !== undefined
+        ? { width: result.width, height: result.height }
+        : {}),
     };
 
     let transformationId: string;
     try {
       const [row] = await this.db.query<{ id: string }[]>(
         `INSERT INTO transformations
-           (user_id, type, source_format, target_format, status, input_size, output_size, duration_ms, error_code)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+           (user_id, type, source_format, target_format, status, input_size, output_size, duration_ms, error_code,
+            storage_status, stored_file_key, storage_next_attempt_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::transformation_storage_status,
+                 $11::text, CASE WHEN $10::transformation_storage_status = 'pending' THEN clock_timestamp() END)
+         RETURNING id`,
         [
           userId,
           type,
@@ -150,11 +173,15 @@ export class TransformationService {
           outputSize,
           durationMs,
           errorCode,
+          saveStatus,
+          storedKey,
         ],
       );
       transformationId = row.id;
     } catch {
       await this.temp.remove(outputPath).catch(() => undefined);
+      if (storedKey)
+        await this.temp.removePending(storedKey).catch(() => undefined);
       this.logger.error(
         { event: 'transformation', ...fields, result: 'history_unavailable' },
         'transformation history write failed',
@@ -167,6 +194,7 @@ export class TransformationService {
         event: 'transformation',
         transformationId,
         ...fields,
+        saveStatus,
         result: result.ok ? 'success' : 'error',
       },
       'transformation finished',
@@ -181,6 +209,7 @@ export class TransformationService {
       contentType: result.contentType,
       extension: result.extension,
       size: result.size,
+      saveStatus,
     };
   }
 
@@ -205,6 +234,7 @@ export class TransformationService {
     }
     void reply
       .header('X-Transformation-Id', result.transformationId)
+      .header('X-Save-Status', result.saveStatus)
       .header('X-Content-Type-Options', 'nosniff')
       .header('Cache-Control', 'no-store');
     return new StreamableFile(stream, {

@@ -20,5 +20,12 @@ export interface Converter {
 }
 
 export type ConverterOutcome =
-  | { ok: true; contentType: string; extension: string }
+  | {
+      ok: true;
+      contentType: string;
+      extension: string;
+      /** Images only: the result's pixel size, for the conversion log (spec 2.2 §1.5, D78). */
+      width?: number;
+      height?: number;
+    }
   | { ok: false; code: ConversionErrorCode };
