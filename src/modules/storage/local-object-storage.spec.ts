@@ -80,12 +80,16 @@ describe('development opaque object storage', () => {
     expect(await readFile(join(root, 'photo'), 'utf8')).toBe('private');
   });
 
-  it('writes without overwriting and lists regular files with pagination', async () => {
+  it('writes without overwriting, repeats the same write, and lists regular files with pagination', async () => {
     expect(await storage.write('opaque.webp', Buffer.from('first'))).toBe(
       'stored',
     );
     expect(await storage.write('opaque.webp', Buffer.from('second'))).toBe(
       'unavailable',
+    );
+    // The same bytes under the same key are the same write again (spec 2.4 §1.3.1).
+    expect(await storage.write('opaque.webp', Buffer.from('first'))).toBe(
+      'stored',
     );
     expect(await storage.write('../escape', Buffer.alloc(1))).toBe(
       'unavailable',

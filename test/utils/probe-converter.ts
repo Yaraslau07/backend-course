@@ -22,7 +22,7 @@ function write(output: Writable, data: string | Buffer): Promise<void> {
 /**
  * `params.mode` picks the behaviour: `upper` (the happy path), `fail` (a library refusal), `throw`,
  * `hang` (a CPU-bound loop the pool must terminate), `big` (more output than allowed), `bad_code`
- * (an unknown error code) and `no_end` (forgets to end the output).
+ * (an unknown error code), `dims`/`bad_dims` (a result size, sane or not) and `no_end` (forgets to end the output).
  */
 export const converter: Converter = {
   async convert(input, params, output): Promise<ConverterOutcome> {
@@ -39,6 +39,16 @@ export const converter: Converter = {
       case 'big':
         await write(output, Buffer.alloc(Number(params.size ?? 4096), 120));
         return { ok: true, contentType: 'text/plain', extension: 'upper' };
+      case 'dims':
+      case 'bad_dims':
+        await write(output, body.toUpperCase());
+        return {
+          ok: true,
+          contentType: 'text/plain',
+          extension: 'upper',
+          width: params.mode === 'dims' ? 7 : -1,
+          height: params.mode === 'dims' ? 9 : 2.5,
+        };
       case 'bad_code':
         return { ok: false, code: 'nope' as never };
       case 'no_end':

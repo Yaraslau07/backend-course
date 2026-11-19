@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { ErasureModule } from '@/modules/erasure/erasure.module';
 import { RbacModule } from '@/modules/rbac/rbac.module';
+import { StorageModule } from '@/modules/storage/storage.module';
 
 import { ConverterRegistry } from './converter-registry';
 import { TempArea } from './temp-area';
@@ -16,7 +17,7 @@ import { TransformationsSetup } from './transformations.setup';
  * directions and call `TransformationService.handle()` from their endpoints.
  */
 @Module({
-  imports: [RbacModule, ErasureModule],
+  imports: [RbacModule, ErasureModule, StorageModule],
   providers: [
     ConverterRegistry,
     TempArea,
@@ -25,6 +26,6 @@ import { TransformationsSetup } from './transformations.setup';
     TransformationsEraser,
     TransformationsSetup,
   ],
-  exports: [ConverterRegistry, TransformationService],
+  exports: [ConverterRegistry, TempArea, TransformationService],
 })
 export class TransformationsModule {}

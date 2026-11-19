@@ -29,8 +29,10 @@ export const converter: Converter = {
     const chunks: Buffer[] = [];
     for await (const chunk of input) chunks.push(chunk as Buffer);
     let bytes: Buffer;
+    let width: number;
+    let height: number;
     try {
-      ({ bytes } = await convertImage(
+      ({ bytes, width, height } = await convertImage(
         source as ImageSource,
         target as ImageTarget,
         Buffer.concat(chunks),
@@ -47,6 +49,8 @@ export const converter: Converter = {
       ok: true,
       contentType: target === 'png' ? 'image/png' : 'image/jpeg',
       extension: target as string,
+      width,
+      height,
     };
   },
 };

@@ -16,7 +16,7 @@ function sink() {
 }
 
 describe('image converter (worker side)', () => {
-  it('converts the whole input and reports the target type and extension', async () => {
+  it('converts the whole input and reports the target type, extension and final size', async () => {
     const png = await sharp({
       create: { width: 4, height: 4, channels: 3, background: 'red' },
     })
@@ -29,7 +29,13 @@ describe('image converter (worker side)', () => {
         { source: 'png', target: 'jpeg', options: {}, timeoutSeconds: 5 },
         out.stream,
       ),
-    ).toEqual({ ok: true, contentType: 'image/jpeg', extension: 'jpeg' });
+    ).toEqual({
+      ok: true,
+      contentType: 'image/jpeg',
+      extension: 'jpeg',
+      width: 4,
+      height: 4,
+    });
     expect((await sharp(out.bytes()).metadata()).format).toBe('jpeg');
   });
 

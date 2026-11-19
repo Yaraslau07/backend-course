@@ -49,7 +49,11 @@ describe('textOperation() (spec 2.1 §1.3.1)', () => {
       source: 'yaml',
       target: 'json',
       params: { source: 'yaml', target: 'json' },
+      save: false,
     });
+    expect(
+      op.resolve(upload('csv', { targetFormat: 'json', save: 'true' })).save,
+    ).toBe(true);
   });
 
   it.each([

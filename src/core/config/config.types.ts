@@ -72,6 +72,8 @@ export interface AppConfig {
   TRANSFORMATION_WORKER_THREADS: number;
   /** Spec 2.3 §1.1: history rows older than this are deleted (default 90 days). */
   TRANSFORMATION_HISTORY_RETENTION_DAYS: number;
+  /** Spec 2.4 §1.1: a saved result is kept this long once it is stored (default 90 days). */
+  TRANSFORMATION_STORED_FILE_RETENTION_DAYS: number;
   /** Spec 2.1 §1.1: input limit per text format (default 10 MiB each). */
   TEXT_CSV_MAX_BYTES: number;
   TEXT_JSON_MAX_BYTES: number;

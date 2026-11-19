@@ -7,12 +7,14 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-import { timestampNow } from '../../../database/columns';
+import { timestamp, timestampNow } from '../../../database/columns';
 import { User } from '../../users/entities/user.entity';
 import {
   TRANSFORMATION_STATUSES,
+  TRANSFORMATION_STORAGE_STATUSES,
   TRANSFORMATION_TYPES,
   type TransformationStatus,
+  type TransformationStorageStatus,
   type TransformationType,
 } from '../transformation.types';
 
@@ -42,6 +44,28 @@ import {
 @Check(
   'ck_transformations_error_code',
   `"error_code" ~ '^[a-z][a-z0-9_]{0,63}$'`,
+)
+// Spec 2.4 §1.6: the worker's queue and the expiry sweep read these.
+@Index('idx_transformations_storage_status_until', [
+  'storageStatus',
+  'storedFileUntil',
+])
+// The key is unique; only a saved result has one (an `error` keeps it so cleanup can try the object).
+@Index('uq_transformations_stored_file_key', ['storedFileKey'], {
+  unique: true,
+  where: '"stored_file_key" IS NOT NULL',
+})
+@Check(
+  'ck_transformations_storage',
+  `("storage_status" = 'not_requested' AND "stored_file_key" IS NULL AND "stored_file_until" IS NULL AND "storage_next_attempt_at" IS NULL)` +
+    ` OR ("status" = 'success' AND (` +
+    `("storage_status" = 'pending' AND "stored_file_key" IS NOT NULL AND "stored_file_until" IS NULL AND "storage_next_attempt_at" IS NOT NULL)` +
+    ` OR ("storage_status" = 'available' AND "stored_file_key" IS NOT NULL AND "stored_file_until" IS NOT NULL AND "storage_next_attempt_at" IS NULL)` +
+    ` OR ("storage_status" = 'error' AND "stored_file_until" IS NULL AND "storage_next_attempt_at" IS NULL)))`,
+)
+@Check(
+  'ck_transformations_storage_attempts',
+  `"storage_attempts" BETWEEN 0 AND 5`,
 )
 export class Transformation {
   @PrimaryGeneratedColumn('uuid', {
@@ -88,4 +112,29 @@ export class Transformation {
 
   @Column(timestampNow('created_at'))
   createdAt: Date;
+
+  @Column({
+    name: 'storage_status',
+    type: 'enum',
+    enum: TRANSFORMATION_STORAGE_STATUSES,
+    enumName: 'transformation_storage_status',
+    default: 'not_requested',
+  })
+  storageStatus: TransformationStorageStatus;
+
+  /** 128 random bits as hex (D55): the object's key and the name of its temporary copy. Never logged or returned. */
+  @Column({ name: 'stored_file_key', type: 'text', nullable: true })
+  storedFileKey: string | null;
+
+  /** When the stored object expires; set once it is `available`. */
+  @Column(timestamp('stored_file_until', { nullable: true }))
+  storedFileUntil: Date | null;
+
+  /** Writes tried so far (at most 5 before `error`). */
+  @Column({ name: 'storage_attempts', type: 'smallint', default: 0 })
+  storageAttempts: number;
+
+  /** When a `pending` row is next due (a backoff after a failed write). */
+  @Column(timestamp('storage_next_attempt_at', { nullable: true }))
+  storageNextAttemptAt: Date | null;
 }

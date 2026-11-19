@@ -17,6 +17,7 @@ import type { TransformResult } from './worker/transform.worker';
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const ID = '22222222-2222-4222-8222-222222222222';
+const KEY = 'a'.repeat(32);
 const definition: ConverterDefinition = {
   type: 'file',
   source: 'csv',
@@ -49,6 +50,8 @@ function setup(
     result instanceof Error ? Promise.reject(result) : Promise.resolve(result),
   );
   const remove = jest.fn().mockResolvedValue(undefined);
+  const keep = jest.fn().mockResolvedValue(KEY);
+  const removePending = jest.fn().mockResolvedValue(undefined);
   const registry = {
     find: jest.fn((type: string, source: string, target: string) =>
       type === 'file' && source === 'csv' && target === 'json'
@@ -60,9 +63,14 @@ function setup(
     { query } as unknown as DataSource,
     registry as unknown as ConverterRegistry,
     { run } as unknown as TransformationPool,
-    { path: () => '/tmp/area/out', remove } as unknown as TempArea,
+    {
+      path: () => '/tmp/area/out',
+      remove,
+      keep,
+      removePending,
+    } as unknown as TempArea,
   );
-  return { service, query, run, remove };
+  return { service, query, run, remove, keep, removePending };
 }
 const codeOf = async (run: () => Promise<unknown>) => {
   try {
@@ -89,7 +97,9 @@ describe('TransformationService.convert() (spec 2.0 §1.3.2 steps 5–9)', () =>
       contentType: 'application/json',
       extension: 'json',
       size: 42,
+      saveStatus: 'not_requested',
     });
+    expect(s.keep).not.toHaveBeenCalled();
     expect(s.run).toHaveBeenCalledWith(
       {
         module: definition.module,
@@ -113,6 +123,60 @@ describe('TransformationService.convert() (spec 2.0 §1.3.2 steps 5–9)', () =>
     ]);
     expect(params[8]).toBeNull();
     expect(s.remove).not.toHaveBeenCalled();
+  });
+
+  describe('save (spec 2.4 §1.3.1)', () => {
+    const insert = (s: ReturnType<typeof setup>) =>
+      s.query.mock.calls[0] as [string, unknown[]];
+
+    it('keeps a copy and writes a pending row with its key', async () => {
+      const s = setup();
+      const result = await s.service.convert(request({ save: true }));
+      expect(result.saveStatus).toBe('pending');
+      expect(s.keep).toHaveBeenCalledWith('/tmp/area/out');
+      expect(insert(s)[1].slice(9)).toEqual(['pending', KEY]);
+    });
+
+    it('returns the file and writes an error row when no copy can be made', async () => {
+      const s = setup();
+      s.keep.mockResolvedValue(null);
+      const result = await s.service.convert(request({ save: true }));
+      expect(result.saveStatus).toBe('error');
+      expect(insert(s)[1].slice(9)).toEqual(['error', null]);
+    });
+
+    it('keeps nothing for a failed conversion', async () => {
+      const s = setup({ ok: false, code: 'invalid_input' });
+      await codeOf(() => s.service.convert(request({ save: true })));
+      expect(s.keep).not.toHaveBeenCalled();
+      expect(insert(s)[1].slice(9)).toEqual(['not_requested', null]);
+    });
+
+    it('removes the copy when the history row cannot be written', async () => {
+      const s = setup();
+      s.query.mockRejectedValue(new Error('down'));
+      expect(
+        await codeOf(() => s.service.convert(request({ save: true }))),
+      ).toBe('service_unavailable');
+      expect(s.removePending).toHaveBeenCalledWith(KEY);
+    });
+
+    it('logs the final image size when the converter reports it', async () => {
+      const s = setup({
+        ok: true,
+        contentType: 'image/png',
+        extension: 'png',
+        size: 5,
+        width: 7,
+        height: 9,
+      });
+      const log = jest.spyOn(Logger.prototype, 'log');
+      await s.service.convert(request());
+      expect(log).toHaveBeenCalledWith(
+        expect.objectContaining({ width: 7, height: 9 }),
+        'transformation finished',
+      );
+    });
   });
 
   it.each([

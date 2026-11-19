@@ -7,6 +7,19 @@ export type TransformationType = (typeof TRANSFORMATION_TYPES)[number];
 export const TRANSFORMATION_STATUSES = ['success', 'error'] as const;
 export type TransformationStatus = (typeof TRANSFORMATION_STATUSES)[number];
 
+/** Spec 2.4 §1.3.4: what became of `save`. A queue of `pending` rows is the worker's task list. */
+export const TRANSFORMATION_STORAGE_STATUSES = [
+  'not_requested',
+  'pending',
+  'available',
+  'error',
+] as const;
+export type TransformationStorageStatus =
+  (typeof TRANSFORMATION_STORAGE_STATUSES)[number];
+
+/** Writes to object storage before a `pending` save becomes `error` (spec 2.4 §1.3.1, D79). */
+export const STORAGE_MAX_ATTEMPTS = 5;
+
 /**
  * The safe codes a conversion can end with (spec 2.0 §1.3.1, §1.4). They are stored in
  * `transformations.error_code` and logged; the client sees only the HTTP code mapped below.

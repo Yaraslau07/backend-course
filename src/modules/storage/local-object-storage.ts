@@ -56,25 +56,38 @@ export class LocalObjectStorage extends ObjectStorage {
       await mkdir(resolve(this.config.get('STORAGE_LOCAL_ROOT')), {
         recursive: true,
       });
-      const file = await open(
-        path,
-        constants.O_WRONLY |
-          constants.O_CREAT |
-          constants.O_EXCL |
-          constants.O_NOFOLLOW,
-        0o600,
-      );
       try {
-        await file.writeFile(bytes);
+        await this.create(path, bytes);
+        return 'stored';
       } catch (error) {
-        await unlink(path).catch(() => undefined);
-        throw error;
-      } finally {
-        await file.close();
+        if (!this.exists(error)) throw error;
+        // The key is already there. Only an earlier attempt of this same write may stand in for it
+        // (spec 2.4 §1.3.1): a regular file of the same size. Nothing is ever overwritten.
+        const found = await lstat(path);
+        return found.isFile() && found.size === bytes.length
+          ? 'stored'
+          : 'unavailable';
       }
-      return 'stored';
     } catch {
       return 'unavailable';
+    }
+  }
+  private async create(path: string, bytes: Buffer): Promise<void> {
+    const file = await open(
+      path,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      await file.writeFile(bytes);
+    } catch (error) {
+      await unlink(path).catch(() => undefined);
+      throw error;
+    } finally {
+      await file.close();
     }
   }
   async list(cursor?: string): Promise<StorageListing> {
@@ -115,6 +128,14 @@ export class LocalObjectStorage extends ObjectStorage {
     return this.config.get('NODE_ENV') === 'production' || !validStorageKey(key)
       ? null
       : resolve(this.config.get('STORAGE_LOCAL_ROOT'), key);
+  }
+  private exists(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'EEXIST'
+    );
   }
   private missing(error: unknown): boolean {
     return (

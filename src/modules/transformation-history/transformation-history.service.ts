@@ -10,6 +10,7 @@ import { ConverterRegistry } from '@/modules/transformations/converter-registry'
 import {
   TRANSFORMATION_TYPES,
   type TransformationStatus,
+  type TransformationStorageStatus,
   type TransformationType,
 } from '@/modules/transformations/transformation.types';
 import { uuidOrNull } from '@/modules/users/user-ids';
@@ -23,7 +24,7 @@ import {
   parseHistoryQuery,
 } from './history-query';
 
-/** Spec 2.3 §1.3.4 (storage fields fixed until spec 2.4). */
+/** Spec 2.3 §1.3.4 with spec 2.4 §1.3.4's storage fields (never the key). */
 export interface TransformationHistoryItem {
   id: string;
   type: TransformationType;
@@ -35,7 +36,7 @@ export interface TransformationHistoryItem {
   durationMs: number;
   errorCode: string | null;
   createdAt: string;
-  storageStatus: 'not_requested' | 'pending' | 'available' | 'error';
+  storageStatus: TransformationStorageStatus;
   hasStoredFile: boolean;
   fileExpiresAt: string | null;
 }
@@ -56,6 +57,10 @@ interface Row {
   duration_ms: number;
   error_code: string | null;
   created_at: Date;
+  storage_status: TransformationStorageStatus;
+  stored_file_until: Date | null;
+  /** Whether the stored file is still within its time (an expired one is gone or about to be). */
+  live: boolean;
 }
 
 /** What the audit line may carry (spec 2.3 §1.5): never the cursor, never a filter value. */
@@ -68,7 +73,7 @@ interface Audit {
 }
 
 const FIELDS =
-  'id, type, source_format, target_format, status, input_size, output_size, duration_ms, error_code, created_at';
+  'id, type, source_format, target_format, status, input_size, output_size, duration_ms, error_code, created_at, storage_status, stored_file_until, coalesce(stored_file_until > clock_timestamp(), false) AS live';
 const FILTER_NAMES: (keyof HistoryFilters)[] = [
   'type',
   'sourceFormat',
@@ -250,9 +255,12 @@ function item(row: Row): TransformationHistoryItem {
     durationMs: row.duration_ms,
     errorCode: row.error_code,
     createdAt: row.created_at.toISOString(),
-    // Spec 2.3 §1.3.4: fixed until saving (spec 2.4, C19) adds the storage columns.
-    storageStatus: 'not_requested',
-    hasStoredFile: false,
-    fileExpiresAt: null,
+    storageStatus: row.storage_status,
+    // Spec 2.4 §1.3.4: true only for an available file that hasn't expired yet.
+    hasStoredFile: row.storage_status === 'available' && row.live,
+    fileExpiresAt:
+      row.storage_status === 'available' && row.stored_file_until
+        ? row.stored_file_until.toISOString()
+        : null,
   };
 }

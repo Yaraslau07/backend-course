@@ -60,7 +60,11 @@ export class S3ObjectStorage extends ObjectStorage implements OnModuleDestroy {
       };
     }
   }
-  async write(key: string, bytes: Buffer): Promise<'stored' | 'unavailable'> {
+  async write(
+    key: string,
+    bytes: Buffer,
+    contentType = 'image/webp',
+  ): Promise<'stored' | 'unavailable'> {
     if (!validStorageKey(key)) return 'unavailable';
     try {
       await this.client.send(
@@ -68,15 +72,21 @@ export class S3ObjectStorage extends ObjectStorage implements OnModuleDestroy {
           Bucket: this.config.get('S3_BUCKET'),
           Key: this.key(key),
           Body: bytes,
-          ContentType: 'image/webp',
+          ContentType: contentType,
           IfNoneMatch: '*',
         }),
         { abortSignal: AbortSignal.timeout(5000) },
       );
       return 'stored';
-    } catch {
-      return 'unavailable';
+    } catch (error) {
+      // The key is random (D55), so a failed precondition is an earlier attempt of this same write.
+      return this.conflict(error) ? 'stored' : 'unavailable';
     }
+  }
+  private conflict(error: unknown): boolean {
+    const status = (error as { $metadata?: { httpStatusCode?: number } } | null)
+      ?.$metadata?.httpStatusCode;
+    return status === 412;
   }
   async delete(key: string): Promise<'deleted' | 'not_found' | 'unavailable'> {
     if (!validStorageKey(key)) return 'unavailable';
