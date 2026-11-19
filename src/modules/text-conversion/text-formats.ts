@@ -242,7 +242,18 @@ function toXml(value: unknown): string {
   return `${DECLARATION}${builder.build(value)}`;
 }
 
+/**
+ * XML 1.0 can't carry most control characters (not even escaped) or lone surrogates; writing them
+ * would make a file our own reader refuses, so such text is `structure_mismatch` (D80).
+ */
+/* eslint-disable no-control-regex -- matching control characters is the point of this pattern */
+const XML_ILLEGAL =
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+/* eslint-enable no-control-regex */
+
 function isScalar(value: unknown): boolean {
+  if (typeof value === 'string' && XML_ILLEGAL.test(value))
+    return fail('structure_mismatch');
   return (
     value === null ||
     typeof value === 'string' ||

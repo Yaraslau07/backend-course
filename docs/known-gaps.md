@@ -98,6 +98,10 @@ A running list of what's still outstanding. Check it before assuming something i
 - A body sent to a route that doesn't exist is still parsed first, so malformed JSON to a missing route answers `400 invalid_json`, not `404`.
 - `text/plain` bodies are still accepted by Fastify's built-in parser and then fail DTO validation (`400`), rather than being refused with `415`.
 
+## Final audit (C20)
+- `npm audit --omit=dev` reports three moderate findings in typeorm's nested `glob`/`minimatch` (D80). Our own glob patterns are the only input; CI fails at `high`.
+- XML text is trimmed on read, and a header-only CSV doesn't round-trip through XML (D70, D80).
+
 ## Testing
 - `configure-app.ts` is covered only by e2e tests, not by unit coverage.
 - `*.entity.ts` files are excluded from unit coverage (D16). They are checked by `test/schema.e2e-spec.ts` and `migration:check` instead.
