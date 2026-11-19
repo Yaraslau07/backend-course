@@ -17,8 +17,13 @@ export const TRANSFORMATION_STORAGE_STATUSES = [
 export type TransformationStorageStatus =
   (typeof TRANSFORMATION_STORAGE_STATUSES)[number];
 
-/** Writes to object storage before a `pending` save becomes `error` (spec 2.4 §1.3.1, D79). */
-export const STORAGE_MAX_ATTEMPTS = 5;
+/**
+ * How long a `pending` save keeps retrying a storage that says `unavailable` before it becomes
+ * `error` (spec 2.4 §1.3.1, D79, D81). It matches how long the temporary copy is kept.
+ */
+export const STORAGE_RETRY_WINDOW_SECONDS = 24 * 3600;
+/** `storage_attempts` counts failed writes only up to this (`ck_transformations_storage_attempts`). */
+export const STORAGE_ATTEMPT_COUNT_CAP = 5;
 
 /**
  * The safe codes a conversion can end with (spec 2.0 §1.3.1, §1.4). They are stored in

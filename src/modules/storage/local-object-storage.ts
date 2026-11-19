@@ -1,5 +1,6 @@
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, readdir, unlink } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { link, lstat, mkdir, open, readdir, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@/core/config/config.service';
@@ -72,9 +73,15 @@ export class LocalObjectStorage extends ObjectStorage {
       return 'unavailable';
     }
   }
+  /**
+   * The bytes go to a private temporary name first, then a hard link makes them appear under the
+   * key in one step that fails if the key exists. A crash can leave a stray temporary name, never
+   * a half-written object under the key (D81).
+   */
   private async create(path: string, bytes: Buffer): Promise<void> {
+    const partial = `${path}.part-${randomBytes(8).toString('hex')}`;
     const file = await open(
-      path,
+      partial,
       constants.O_WRONLY |
         constants.O_CREAT |
         constants.O_EXCL |
@@ -82,12 +89,14 @@ export class LocalObjectStorage extends ObjectStorage {
       0o600,
     );
     try {
-      await file.writeFile(bytes);
-    } catch (error) {
-      await unlink(path).catch(() => undefined);
-      throw error;
+      try {
+        await file.writeFile(bytes);
+      } finally {
+        await file.close();
+      }
+      await link(partial, path);
     } finally {
-      await file.close();
+      await unlink(partial).catch(() => undefined);
     }
   }
   async list(cursor?: string): Promise<StorageListing> {

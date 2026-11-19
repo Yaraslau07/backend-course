@@ -220,7 +220,10 @@ export class LoginService implements OnModuleInit {
       method: issued.method,
     });
     await this.challenges.deliver(email, issued);
-    return this.challenges.accepted(issued);
+    // Spec 1.2 §1.3.2: the resend answer has the challenge fields only, not `confirmationRequired`.
+    const body = this.challenges.accepted(issued);
+    delete body.confirmationRequired;
+    return body;
   }
 
   /** Spec 1.2 §1.3.1 steps 6–8: a challenge for a user whose password just matched. */

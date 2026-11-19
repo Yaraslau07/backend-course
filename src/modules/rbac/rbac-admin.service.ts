@@ -12,6 +12,9 @@ import type { RoleDto } from './dto/role.dto';
 import { DEFAULT_ROLE } from './rbac.types';
 import { assertRbacManagerRemains } from './rbac-invariant';
 
+/** Errors `change()` already logged, so the controller's audit doesn't log them twice. */
+export const RBAC_LOGGED_ERRORS = new WeakSet<object>();
+
 export interface RoleView {
   id: string;
   name: string;
@@ -400,6 +403,8 @@ export class RbacAdminService {
         },
         'RBAC change refused',
       );
+      if (typeof refused === 'object' && refused !== null)
+        RBAC_LOGGED_ERRORS.add(refused);
       throw refused;
     }
   }

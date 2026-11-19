@@ -285,6 +285,39 @@ describe('XML as the source (spec 2.1 §1.6: no DTD, no external entities)', () 
   });
 });
 
+describe('XML character references (D81)', () => {
+  it('decodes numeric references once, in text and attributes', () => {
+    const out = JSON.parse(
+      convert('xml', 'json', '<a x="&#66;&#x43;">&#65;&#x42;&lt;&amp;lt;</a>'),
+    ) as unknown;
+    expect(out).toEqual({ a: { '@x': 'BC', '#text': 'AB<&lt;' } });
+  });
+
+  it.each([
+    '&#0;',
+    '&#1;',
+    '&#xD800;',
+    '&#x110000;',
+    '&#65536000;',
+    '&#xFFFE;',
+  ])(
+    'refuses %s, a character XML 1.0 cannot hold (invalid_input)',
+    (reference) => {
+      expect(
+        codeOf(() => convert('xml', 'json', `<a>x${reference}y</a>`)),
+      ).toBe('invalid_input');
+    },
+  );
+
+  it('accepts tab, newline and non-BMP references', () => {
+    expect(
+      JSON.parse(
+        convert('xml', 'json', '<a>x&#9;y&#xA;&#x1F600;</a>'),
+      ) as unknown,
+    ).toEqual({ a: 'x\ty\n😀' });
+  });
+});
+
 describe('YAML as the source (spec 2.1 §1.6: safe loader)', () => {
   it('yaml → csv and yaml → xml', () => {
     expect(

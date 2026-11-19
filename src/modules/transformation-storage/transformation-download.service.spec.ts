@@ -117,6 +117,25 @@ describe('TransformationDownloadService (spec 2.4 §1.3.2–1.3.3)', () => {
     });
   });
 
+  it('an object deleted by retention after the row was read is 404, not a mismatch (D81)', async () => {
+    const s = setup([item()], { kind: 'not_found' });
+    s.query
+      .mockImplementationOnce(() => Promise.resolve([item()]))
+      .mockImplementationOnce(() => Promise.resolve([]));
+    expect(await codeOf(() => s.service.own(OWNER, ITEM))).toBe('not_found');
+    expect(error).not.toHaveBeenCalled();
+
+    const cleared = setup([item()], { kind: 'not_found' });
+    cleared.query
+      .mockImplementationOnce(() => Promise.resolve([item()]))
+      .mockImplementationOnce(() =>
+        Promise.resolve([item({ storage_status: 'not_requested' })]),
+      );
+    expect(await codeOf(() => cleared.service.own(OWNER, ITEM))).toBe(
+      'not_found',
+    );
+  });
+
   it('unavailable storage is 503 too', async () => {
     const s = setup([item()], { kind: 'unavailable' });
     expect(await codeOf(() => s.service.own(OWNER, ITEM))).toBe(

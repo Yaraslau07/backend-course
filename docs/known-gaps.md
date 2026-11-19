@@ -37,7 +37,7 @@ A running list of what's still outstanding. Check it before assuming something i
 
 ## Text conversion (C16)
 - CSV output doesn't neutralise spreadsheet formulas (a cell starting with `=`, `+`, `-` or `@`); the spec asks for faithful conversion, and the result is a download, not a rendered page.
-- Unknown XML entities (`&foo;`) are kept as literal text rather than refused; only the five predefined ones are decoded.
+- XML names the parser doesn't know (`&foo;`) are kept as literal text rather than refused. Numeric references and the fixed HTML name table (`&copy;`) are decoded (D81); no DTD entity can exist.
 - Each conversion holds its whole input and result in memory in one worker thread: at most a 10 MiB input and a 50 MiB result per conversion, times `TRANSFORMATION_WORKER_THREADS`.
 - During C16's gate, `users-read.e2e-spec.ts` (C12) failed once, right after a run in which the host stalled for several minutes. It passed in the 16 full runs that followed and couldn't be reproduced. Its timing-sensitive tests (the 2-second SQL timeout, the lock-wait check) are the likely cause.
 
@@ -54,10 +54,10 @@ A running list of what's still outstanding. Check it before assuming something i
 
 ## Saved results (C19)
 - **The pending copy is local to one instance.** `save=true` copies the result to `<TRANSFORMATION_TEMP_DIR>/pending/<key>`; the worker on another instance would not find it and would mark the save `error`. Run one instance, or point every instance at a shared `TRANSFORMATION_TEMP_DIR` (D79).
-- The port reports only `unavailable`, so a temporary and a permanent storage failure look the same: five failed writes (30 s, 60 s, 2 min, 4 min between them) turn a `pending` save into `error`. A longer outage loses the save, not the conversion.
+- The port reports only `unavailable`, so a temporary and a permanent storage failure look the same: a `pending` save is retried (30 s doubling, at most every 15 minutes) and becomes `error` only after a day of failing (D81). A longer outage loses the save, not the conversion.
 - The worker and the retention sweep hold a row lock through a bounded storage call, like the photo cleanup (D64). Slow storage lengthens those transactions.
 - A whole result is read into memory for each write (`ObjectStorage.write` takes a Buffer): up to the direction's output limit, one at a time per worker pass.
-- A local-storage leftover under a stored key with a different size (a crash mid-write) is never overwritten, so that save ends as `error` after its attempts. S3 has no such state.
+- Local storage writes through a `<key>.part-<random>` name and links it into place, so a crash can leave only a stray temporary name (never listed, never an object). Nothing sweeps those names (D81).
 - When a stored file expires before its row, the row goes back to `not_requested` (the enum has no "expired"); with the defaults rows are deleted first (D79).
 - Downloads have no rate limit (spec 2.4 names none).
 - History retention is off when `STORAGE_WORKERS_ENABLED=false` (the flag exists for isolated smoke tests, D53); leave it on in any real deployment.
