@@ -75,13 +75,19 @@ export class S3ObjectStorage extends ObjectStorage implements OnModuleDestroy {
           ContentType: contentType,
           IfNoneMatch: '*',
         }),
-        { abortSignal: AbortSignal.timeout(5000) },
+        {
+          abortSignal: AbortSignal.timeout(this.uploadTimeoutMs(bytes.length)),
+        },
       );
       return 'stored';
     } catch (error) {
       // The key is random (D55), so a failed precondition is an earlier attempt of this same write.
       return this.conflict(error) ? 'stored' : 'unavailable';
     }
+  }
+  /** 5 s plus 1 s per MiB, at most 5 minutes: a large result can't finish inside a flat 5 s. */
+  private uploadTimeoutMs(size: number): number {
+    return Math.min(5000 + Math.ceil(size / (1024 * 1024)) * 1000, 300_000);
   }
   private conflict(error: unknown): boolean {
     const status = (error as { $metadata?: { httpStatusCode?: number } } | null)

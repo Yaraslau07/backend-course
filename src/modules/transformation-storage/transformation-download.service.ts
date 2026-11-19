@@ -63,13 +63,10 @@ export class TransformationDownloadService {
     return this.open(actor, 'admin', user.id, itemId);
   }
 
-  private async open(
-    actor: string,
-    scope: Scope,
+  private async item(
     owner: string,
     itemId: string,
-  ): Promise<StoredDownload> {
-    const started = performance.now();
+  ): Promise<ItemRow | undefined> {
     const [row] = await this.db.query<ItemRow[]>(
       `SELECT id, target_format, output_size, storage_status, stored_file_key,
               coalesce(stored_file_until > clock_timestamp(), false) AS live
@@ -77,6 +74,17 @@ export class TransformationDownloadService {
         WHERE id = $1 AND user_id = $2`,
       [uuidOrNull(itemId), owner],
     );
+    return row;
+  }
+
+  private async open(
+    actor: string,
+    scope: Scope,
+    owner: string,
+    itemId: string,
+  ): Promise<StoredDownload> {
+    const started = performance.now();
+    const row = await this.item(owner, itemId);
     const log = (
       result: string,
       level: 'log' | 'error' = 'log',
@@ -113,6 +121,19 @@ export class TransformationDownloadService {
     }
 
     const object = await this.storage.read(row.stored_file_key as string);
+    if (object.kind === 'not_found') {
+      // Retention or the eraser may have deleted the object (and cleared the row) after we read
+      // it. If the row no longer holds this key, that is just "gone" (404), not a mismatch (D81).
+      const again = await this.item(owner, itemId);
+      if (
+        !again ||
+        again.storage_status !== 'available' ||
+        again.stored_file_key !== row.stored_file_key
+      ) {
+        log('not_found');
+        throw new AppException('not_found');
+      }
+    }
     if (object.kind !== 'found') {
       // A key in history with no object (or storage down): never a 404 (spec 2.4 §1.3.2).
       log(

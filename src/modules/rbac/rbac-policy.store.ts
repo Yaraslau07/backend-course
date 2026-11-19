@@ -76,6 +76,11 @@ export class RbacPolicyStore implements OnModuleInit, OnApplicationBootstrap {
     }
   }
 
+  /** The version of the snapshot already in memory, without touching the database (for logs). */
+  loadedVersion(): string | null {
+    return this.snapshot?.version ?? null;
+  }
+
   /** The snapshot at the database's current version, or `503 authorization_unavailable`. */
   async current(): Promise<PolicySnapshot> {
     const version = await this.databaseVersion();

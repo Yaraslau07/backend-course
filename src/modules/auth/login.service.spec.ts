@@ -452,9 +452,8 @@ describe('LoginService', () => {
     it('resends to the locked user and returns the 202 body', async () => {
       const { service, engine } = setup();
 
-      expect(await service.resend({ attemptId: ATTEMPT })).toEqual({
-        confirmationRequired: true,
-      });
+      // The login 202 says `confirmationRequired`; the resend 202 has the challenge fields only.
+      expect(await service.resend({ attemptId: ATTEMPT })).toEqual({});
       expect(engine.resend).toHaveBeenCalledWith(expect.anything(), 'login', {
         challengeId: ATTEMPT,
         userId: USER,

@@ -275,17 +275,31 @@ describe('the background write (spec 2.4 §1.3.1 step 5)', () => {
     });
   });
 
-  it('keeps failing: after the last attempt the row is error and the copy is gone', async () => {
+  it('keeps retrying through a long outage, and gives up only after a day (D81)', async () => {
     const res = await convert(member, { save: 'true' });
     const id = res.headers['x-transformation-id'] as string;
     const key = (await row(id))?.stored_file_key as string;
     jest
       .spyOn(app.get(ObjectStorage), 'write')
       .mockResolvedValue('unavailable');
-    for (let attempt = 0; attempt < 6; attempt++) {
+    // Many failed writes later it is still pending, with its copy.
+    for (let attempt = 0; attempt < 8; attempt++) {
       await makeDue();
       await worker.run();
     }
+    expect(await row(id)).toMatchObject({
+      storage_status: 'pending',
+      storage_attempts: 5,
+    });
+    expect(await pendingCopies()).toContain(key);
+
+    // After a day of waiting the save is an error and the copy is gone.
+    await db.query(
+      `UPDATE transformations SET created_at = now() - interval '25 hours' WHERE id = $1`,
+      [id],
+    );
+    await makeDue();
+    await worker.run();
     expect((await row(id))?.storage_status).toBe('error');
     expect(await pendingCopies()).not.toContain(key);
     const history = (

@@ -1,6 +1,7 @@
 import {
   mkdtemp,
   mkdir,
+  readdir,
   readFile,
   rm,
   symlink,
@@ -124,5 +125,21 @@ describe('development opaque object storage', () => {
     } as ConfigService);
     expect(await storage.read('photo')).toEqual({ kind: 'unavailable' });
     expect(await storage.delete('photo')).toBe('unavailable');
+  });
+
+  it('writes through a private temporary name and leaves nothing beside the object', async () => {
+    expect(await storage.write('atomic', Buffer.from('whole'))).toBe('stored');
+    expect(await readdir(root)).toContain('atomic');
+    expect((await readdir(root)).filter((n) => n.includes('.part-'))).toEqual(
+      [],
+    );
+    // A stray temporary name (a crash) is not an object and never listed.
+    await writeFile(join(root, 'atomic.part-deadbeef'), 'torn');
+    const listing = await storage.list();
+    if (listing.kind !== 'listed') throw new Error('expected listing');
+    expect(listing.objects.map((o) => o.key)).toContain('atomic');
+    expect(listing.objects.map((o) => o.key)).not.toContain(
+      'atomic.part-deadbeef',
+    );
   });
 });

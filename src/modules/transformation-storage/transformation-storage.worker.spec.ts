@@ -8,12 +8,13 @@ import type { TempArea } from '@/modules/transformations/temp-area';
 import { TransformationStorageWorker } from './transformation-storage.worker';
 
 const KEY = 'b'.repeat(32);
-const pending = (attempts = 0) => ({
+const pending = (attempts = 0, ageSeconds = 0) => ({
   id: 'row-1',
   user_id: 'user-1',
   target_format: 'json',
   stored_file_key: KEY,
   storage_attempts: attempts,
+  age_seconds: ageSeconds,
 });
 
 const fieldsOf = (spy: jest.SpyInstance) =>
@@ -96,21 +97,30 @@ describe('TransformationStorageWorker (spec 2.4 §1.3.1 step 5)', () => {
     expect(sql).toContain("storage_status = 'pending'");
   });
 
-  it('keeps the row pending with a doubling backoff while storage is down', async () => {
-    const s = setup([pending(0), pending(2)], { write: 'unavailable' });
+  it('keeps the row pending with a doubling backoff, at most 15 minutes', async () => {
+    const s = setup([pending(0), pending(2), pending(5, 3600)], {
+      write: 'unavailable',
+    });
     await s.worker.run();
     expect(s.writes[0][1]).toEqual(['row-1', 1, 30]);
     expect(s.writes[1][1]).toEqual(['row-1', 3, 120]);
-    expect(s.writes[0][0]).not.toContain("storage_status = 'error'");
+    // Many failures later it still retries, every 15 minutes, and the counter stays at its cap.
+    expect(s.writes[2][1]).toEqual(['row-1', 5, 900]);
+    for (const [sql] of s.writes)
+      expect(sql).not.toContain("storage_status = 'error'");
     expect(s.temp.removePending).not.toHaveBeenCalled();
   });
 
-  it('turns the save into error after the fifth failed write, keeping the key', async () => {
-    const s = setup([pending(4)], { write: 'unavailable' });
+  it('gives up only after a day of retrying, keeping the key and dropping the copy', async () => {
+    const s = setup([pending(5, 24 * 3600 - 1), pending(5, 24 * 3600 + 1)], {
+      write: 'unavailable',
+    });
     await s.worker.run();
-    expect(s.writes[0][0]).toContain("storage_status = 'error'");
-    expect(s.writes[0][0]).not.toContain('stored_file_key');
-    expect(s.writes[0][1]).toEqual(['row-1', 5]);
+    expect(s.writes[0][0]).not.toContain("storage_status = 'error'");
+    expect(s.writes[1][0]).toContain("storage_status = 'error'");
+    expect(s.writes[1][0]).not.toContain('stored_file_key');
+    expect(s.writes[1][1]).toEqual(['row-1', 5]);
+    expect(s.temp.removePending).toHaveBeenCalledTimes(1);
     expect(s.temp.removePending).toHaveBeenCalledWith(KEY);
   });
 

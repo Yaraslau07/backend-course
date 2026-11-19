@@ -12,14 +12,18 @@ import { DataSource } from 'typeorm';
 import { ConfigService } from '@/core/config/config.service';
 import { ObjectStorage } from '@/modules/storage/object-storage';
 import { TempArea } from '@/modules/transformations/temp-area';
-import { STORAGE_MAX_ATTEMPTS } from '@/modules/transformations/transformation.types';
+import {
+  STORAGE_ATTEMPT_COUNT_CAP,
+  STORAGE_RETRY_WINDOW_SECONDS,
+} from '@/modules/transformations/transformation.types';
 
 import { contentTypeOf } from './stored-result';
 
 const INTERVAL_MS = 5000;
 const PER_RUN = 20;
-/** The wait before attempt n + 1 is 30 s × 2ⁿ, so a short outage retries soon and a long one backs off. */
+/** The wait before attempt n + 1 is 30 s × 2ⁿ, at most 15 minutes: an outage retries soon, then steadily. */
 const BACKOFF_SECONDS = 30;
+const BACKOFF_MAX_SECONDS = 900;
 
 interface PendingRow {
   id: string;
@@ -27,6 +31,8 @@ interface PendingRow {
   target_format: string;
   stored_file_key: string;
   storage_attempts: number;
+  /** How long the save has been waiting, in seconds (database clock). */
+  age_seconds: number;
 }
 
 /**
@@ -37,8 +43,9 @@ interface PendingRow {
  *
  * - **Repeat:** a write of a key that already holds the same bytes is `stored` again (D79), so an
  *   attempt whose commit was lost never makes a second object.
- * - **Outage:** the row stays `pending` and is due again after a growing delay. The port can't tell
- *   a temporary failure from a permanent one, so the fifth failed write turns it into `error`.
+ * - **Outage:** the row stays `pending` and is due again after a growing delay (30 s doubling, at most
+ *   15 min). The port can't tell a temporary failure from a permanent one, so it gives up only when
+ *   the save has waited a day, as long as its temporary copy is kept (D81).
  * - **Lost copy:** a missing temporary copy is `error` at once.
  */
 @Injectable()
@@ -98,7 +105,8 @@ export class TransformationStorageWorker
   private async next(): Promise<boolean> {
     const settled = await this.db.transaction(async (manager) => {
       const [row] = await manager.query<PendingRow[]>(
-        `SELECT id, user_id, target_format, stored_file_key, storage_attempts
+        `SELECT id, user_id, target_format, stored_file_key, storage_attempts,
+                 extract(epoch FROM clock_timestamp() - created_at)::float8 AS age_seconds
            FROM transformations
           WHERE storage_status = 'pending' AND storage_next_attempt_at <= clock_timestamp()
           ORDER BY storage_next_attempt_at, id
@@ -107,7 +115,10 @@ export class TransformationStorageWorker
       );
       if (!row) return null;
       const started = performance.now();
-      const attempts = row.storage_attempts + 1;
+      const attempts = Math.min(
+        row.storage_attempts + 1,
+        STORAGE_ATTEMPT_COUNT_CAP,
+      );
       const bytes = await this.temp.readPending(row.stored_file_key);
       const written = bytes
         ? await this.storage.write(
@@ -132,14 +143,24 @@ export class TransformationStorageWorker
             this.config.get('TRANSFORMATION_STORED_FILE_RETENTION_DAYS'),
           ],
         );
-      } else if (written === 'unavailable' && attempts < STORAGE_MAX_ATTEMPTS) {
+      } else if (
+        written === 'unavailable' &&
+        row.age_seconds < STORAGE_RETRY_WINDOW_SECONDS
+      ) {
         result = 'retry';
         await manager.query(
           `UPDATE transformations
               SET storage_attempts = $2,
                   storage_next_attempt_at = clock_timestamp() + make_interval(secs => $3)
             WHERE id = $1`,
-          [row.id, attempts, BACKOFF_SECONDS * 2 ** row.storage_attempts],
+          [
+            row.id,
+            attempts,
+            Math.min(
+              BACKOFF_SECONDS * 2 ** row.storage_attempts,
+              BACKOFF_MAX_SECONDS,
+            ),
+          ],
         );
       } else {
         result = 'error';
@@ -148,7 +169,7 @@ export class TransformationStorageWorker
           `UPDATE transformations
               SET storage_status = 'error', storage_attempts = $2, storage_next_attempt_at = NULL
             WHERE id = $1`,
-          [row.id, Math.min(attempts, STORAGE_MAX_ATTEMPTS)],
+          [row.id, attempts],
         );
       }
       this.logger.log(

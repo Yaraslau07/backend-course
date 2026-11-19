@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Post,
   Put,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
@@ -18,6 +19,7 @@ import { GrantDto } from './dto/grant.dto';
 import { PermissionDto } from './dto/permission.dto';
 import { RoleDto } from './dto/role.dto';
 import { UserRolesDto } from './dto/user-roles.dto';
+import { RbacAdminAuditInterceptor } from './rbac-admin-audit.interceptor';
 import {
   type GrantView,
   type PermissionView,
@@ -36,6 +38,7 @@ const Id = (name: string) => Param(name, new ParseUUIDPipe());
 @ApiResponse({ status: 401, description: '`invalid_session`' })
 @ApiResponse({ status: 403, description: '`permission_denied`' })
 @Controller('admin/rbac')
+@UseInterceptors(RbacAdminAuditInterceptor)
 export class RbacAdminController {
   constructor(private readonly admin: RbacAdminService) {}
 

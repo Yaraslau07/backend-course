@@ -727,7 +727,6 @@ describe('Login with OTP confirmation (e2e)', () => {
 
       expect(res.status).toBe(202);
       expect(res.body).toEqual({
-        confirmationRequired: true,
         method: 'otp',
         attemptId,
         expiresInSeconds: 600,

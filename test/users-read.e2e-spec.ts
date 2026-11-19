@@ -412,6 +412,24 @@ describe('admin user listing (spec 1.7)', () => {
     }
   });
 
+  it('an expired cursor is invalid_cursor, and one is fine until its 15 minutes pass (spec 1.7 §1.3.4)', async () => {
+    const res = await list({ limit: '1' });
+    const cursor = res.json<{ nextCursor: string }>().nextCursor;
+    secrets.push(cursor);
+    const real = Date.now();
+    const clock = jest.spyOn(Date, 'now');
+    try {
+      clock.mockReturnValue(real + 14 * 60 * 1000);
+      expect((await list({ limit: '1', cursor })).statusCode).toBe(200);
+      clock.mockReturnValue(real + 15 * 60 * 1000 + 1000);
+      const expired = await list({ limit: '1', cursor });
+      expect(expired.statusCode).toBe(400);
+      expect(expired.json<{ code: string }>().code).toBe('invalid_cursor');
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('limits the actor to 60 requests and a shared IP to 120', async () => {
     const actor = await actorWithRoles(app, ['admin']);
     for (let n = 0; n < 60; n++)

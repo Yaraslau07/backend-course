@@ -179,7 +179,9 @@ const parser = new XMLParser({
   parseAttributeValue: false,
   trimValues: true,
   processEntities: true,
-  htmlEntities: false,
+  // Decodes numeric references (`&#65;`, `&#x41;`) and the fixed HTML name table; no DTD entity can
+  // exist (D71), so nothing here expands to anything but a character (D81).
+  htmlEntities: true,
   ignoreDeclaration: true,
   ignorePiTags: true,
 });
@@ -195,6 +197,24 @@ const DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>\n';
 const XML_NAME = /^[\p{L}_][\p{L}\p{N}_.:-]{0,199}$/u;
 
 /**
+ * A numeric reference must name a character XML 1.0 allows. The parser drops others silently
+ * (`&#0;` becomes nothing), which would lose data, so they are refused instead (D81).
+ */
+function checkCharacterReferences(text: string): void {
+  for (const match of text.matchAll(/&#(?:x([0-9a-fA-F]+)|([0-9]+));/g)) {
+    const code = match[1] ? parseInt(match[1], 16) : parseInt(match[2], 10);
+    const legal =
+      code === 0x9 ||
+      code === 0xa ||
+      code === 0xd ||
+      (code >= 0x20 && code <= 0xd7ff) ||
+      (code >= 0xe000 && code <= 0xfffd) ||
+      (code >= 0x10000 && code <= 0x10ffff);
+    if (!legal) fail('invalid_input');
+  }
+}
+
+/**
  * No DTD at all (spec 2.1 §1.6): a DOCTYPE is refused before the parser sees it, because the parser
  * would expand its internal entities. Without one only the five predefined entities exist, and the
  * parser never fetches anything.
@@ -202,6 +222,7 @@ const XML_NAME = /^[\p{L}_][\p{L}\p{N}_.:-]{0,199}$/u;
 function parseXml(text: string): Json {
   if (/<!DOCTYPE/i.test(text) || /<!ENTITY/i.test(text)) fail('unsafe_input');
   if (XMLValidator.validate(text) !== true) fail('invalid_input');
+  checkCharacterReferences(text);
   const value = parser.parse(text) as Record<string, Json>;
   if (!isObject(value) || Object.keys(value).length !== 1)
     fail('invalid_input');
