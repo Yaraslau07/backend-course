@@ -21,6 +21,7 @@ function setup(
   { expired = [], old = [] }: { expired?: Row[][]; old?: Row[][] },
   env = 'test',
   deleteResult: 'deleted' | 'not_found' | 'unavailable' = 'deleted',
+  workers = true,
 ) {
   const writes: [string, unknown[]][] = [];
   const selects = { expired: 0, old: 0 };
@@ -51,7 +52,9 @@ function setup(
           ? env
           : key === 'TRANSFORMATION_HISTORY_RETENTION_DAYS'
             ? 90
-            : undefined,
+            : key === 'STORAGE_WORKERS_ENABLED'
+              ? workers
+              : undefined,
     } as unknown as ConfigService,
     storage as unknown as ObjectStorage,
     temp as unknown as TempArea,
@@ -152,6 +155,24 @@ describe('TransformationRetention (spec 2.3 §1.3.5, §1.6; spec 2.4 §1.3.5)', 
     expect(a + b).toBe(0);
     expect(selects.expired).toBe(1);
     retention.onModuleDestroy();
+  });
+
+  it('deletes at most 50 objects per batch and carries the rest to the next batch', async () => {
+    const { retention, storage, selects } = setup({
+      old: [many(120, true), many(70, true), []],
+    });
+    expect(await retention.run()).toBe(100);
+    expect(storage.delete).toHaveBeenCalledTimes(100);
+    // Rows deferred by the cap keep the sweep going until a batch has none left.
+    expect(selects.old).toBe(3);
+  });
+
+  it('does not schedule itself when the storage workers are off', () => {
+    jest.useFakeTimers();
+    const { retention } = setup({}, 'production', 'deleted', false);
+    retention.onModuleInit();
+    expect(jest.getTimerCount()).toBe(0);
+    jest.useRealTimers();
   });
 
   it('schedules itself outside tests', () => {

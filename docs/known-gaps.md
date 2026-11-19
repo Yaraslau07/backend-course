@@ -60,6 +60,8 @@ A running list of what's still outstanding. Check it before assuming something i
 - A local-storage leftover under a stored key with a different size (a crash mid-write) is never overwritten, so that save ends as `error` after its attempts. S3 has no such state.
 - When a stored file expires before its row, the row goes back to `not_requested` (the enum has no "expired"); with the defaults rows are deleted first (D79).
 - Downloads have no rate limit (spec 2.4 names none).
+- History retention is off when `STORAGE_WORKERS_ENABLED=false` (the flag exists for isolated smoke tests, D53); leave it on in any real deployment.
+- The eraser walks all of a user's rows in one run, so a user with thousands of saved results can outlast `DELETION_WORKER_LEASE_SECONDS` (D64); a second run is fenced and retries.
 - An `error` row keeps its key so cleanup can still try the object; if storage stays down, the object outlives its row's retention attempt until the next sweep succeeds.
 
 ## Infrastructure

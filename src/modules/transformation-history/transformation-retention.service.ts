@@ -47,8 +47,13 @@ export class TransformationRetention implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    // Tests drive `run()` themselves.
-    if (this.config.get('NODE_ENV') === 'test') return;
+    // Tests drive `run()` themselves; isolated smoke tests turn the workers off so a temporary
+    // database is never swept against a persistent bucket (D53, D79).
+    if (
+      this.config.get('NODE_ENV') === 'test' ||
+      !this.config.get('STORAGE_WORKERS_ENABLED')
+    )
+      return;
     this.timer = setInterval(() => {
       void this.run().catch(() =>
         this.logger.warn(
@@ -125,27 +130,34 @@ export class TransformationRetention implements OnModuleInit, OnModuleDestroy {
             ORDER BY created_at LIMIT $2 FOR UPDATE SKIP LOCKED`,
           [this.config.get('TRANSFORMATION_HISTORY_RETENTION_DAYS'), BATCH],
         );
-        const withObjects = rows.filter((row) => row.stored_file_key);
+        // Object deletes are network calls inside this transaction: at most OBJECT_BATCH per
+        // batch. Rows beyond that keep their key and are taken by the next batch.
+        const withObjects = rows
+          .filter((row) => row.stored_file_key)
+          .slice(0, OBJECT_BATCH);
         const deletable = new Set(
           (await this.deleteObjects(withObjects)).map((row) => row.id),
         );
+        const attempted = new Set(withObjects.map((row) => row.id));
         const ids = rows
-          .filter((row) => !row.stored_file_key || deletable.has(row.id))
+          .filter((row) => (row.stored_file_key ? deletable.has(row.id) : true))
           .map((row) => row.id);
         await this.deleteRows(manager, ids);
-        return { rows, ids, withObjects };
+        const failed = withObjects.length > deletable.size;
+        const skipped = rows.some(
+          (row) => row.stored_file_key && !attempted.has(row.id),
+        );
+        return { rows, ids, withObjects, failed, skipped };
       });
+      const gone = new Set(outcome.ids);
       for (const row of outcome.withObjects)
-        if (row.stored_file_key)
+        if (row.stored_file_key && gone.has(row.id))
           await this.temp
             .removePending(row.stored_file_key)
             .catch(() => undefined);
       total += outcome.ids.length;
-      // A short batch is the end; so is a batch whose object deletions failed.
-      if (
-        outcome.rows.length < BATCH ||
-        outcome.ids.length < outcome.rows.length
-      )
+      // A short batch is the end (unless object rows were deferred); so is a failed deletion.
+      if (outcome.failed || (outcome.rows.length < BATCH && !outcome.skipped))
         break;
     }
     return total;
