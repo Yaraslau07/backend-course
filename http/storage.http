@@ -1,0 +1,70 @@
+# C19 (spec 2.4). Sign in with auth.http first: the HTTP client keeps the access cookie.
+# Saving needs transformations@convert; downloading your own needs transformations@download;
+# another user's needs transformations@download_any (admin).
+@itemId = <id-from-X-Transformation-Id-or-history>
+@targetUserId = <another-user-id>
+
+### Convert and save: 200 immediately, X-Save-Status: pending (the file is written in the background)
+POST {{baseUrl}}/api/convert
+Content-Type: multipart/form-data; boundary=b
+
+--b
+Content-Disposition: form-data; name="targetFormat"
+
+json
+--b
+Content-Disposition: form-data; name="save"
+
+true
+--b
+Content-Disposition: form-data; name="file"; filename="people.csv"
+Content-Type: text/csv
+
+name,city
+Ada,Zurich
+--b--
+
+### Without save (or save=false): X-Save-Status: not_requested, nothing is kept
+POST {{baseUrl}}/api/convert
+Content-Type: multipart/form-data; boundary=b
+
+--b
+Content-Disposition: form-data; name="targetFormat"
+
+json
+--b
+Content-Disposition: form-data; name="file"; filename="people.csv"
+Content-Type: text/csv
+
+name,city
+Ada,Zurich
+--b--
+
+### save must be true or false: 400
+POST {{baseUrl}}/api/convert
+Content-Type: multipart/form-data; boundary=b
+
+--b
+Content-Disposition: form-data; name="targetFormat"
+
+json
+--b
+Content-Disposition: form-data; name="save"
+
+yes
+--b
+Content-Disposition: form-data; name="file"; filename="people.csv"
+Content-Type: text/csv
+
+name,city
+Ada,Zurich
+--b--
+
+### The save status in history: storageStatus pending → available, hasStoredFile, fileExpiresAt (never the key)
+GET {{baseUrl}}/api/transformations/history?limit=5
+
+### Download your saved result: 200 attachment; 409 file_not_ready while pending; 404 if unsaved, failed, expired or not yours
+GET {{baseUrl}}/api/transformations/history/{{itemId}}/download
+
+### Download someone's saved result (admin): 200; 403 without download_any; 404 for an unknown user or item
+GET {{baseUrl}}/admin/users/{{targetUserId}}/transformations/history/{{itemId}}/download

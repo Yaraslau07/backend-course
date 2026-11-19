@@ -118,15 +118,21 @@ One finished transformation (spec 2.0 §1.3.3; C15, D65, D69). Only safe metadat
 | `duration_ms` | integer |
 | `error_code` | a safe converter code (`ck_transformations_error_code`), only on error |
 | `created_at` | timestamptz(3) |
+| `storage_status` | `transformation_storage_status`: `not_requested` (default), `pending`, `available`, `error` (spec 2.4; C19, D79) |
+| `stored_file_key` | 128 random bits as hex (no `.webp`, so the photo sweep never sees it); never returned or logged |
+| `stored_file_until` | when the stored object expires; only when `available` |
+| `storage_attempts`, `storage_next_attempt_at` | the worker's retries (0–5) and when a `pending` row is due |
 
 | Constraint | Rule |
 |---|---|
+| `ck_transformations_storage` | which storage columns go with which status: `pending` has a key and a next attempt, `available` a key and an expiry, `error` no expiry and no next attempt, and only a successful conversion is anything but `not_requested` |
+| `ck_transformations_storage_attempts` | 0 to 5 |
+| `uq_transformations_stored_file_key` | one row per key (partial: only where a key exists) |
+| `idx_transformations_storage_status_until` | spec 2.4 §1.6: the worker's queue and the expiry sweep |
 | `ck_transformations_outcome` | `success` has an output size and no error code; `error` has a code and no output size |
 | `ck_transformations_sizes` | sizes and duration are non-negative |
 | `idx_transformations_user_created_at_id` | spec 2.0 §1.6 and 2.3's keyset order (`created_at DESC, id DESC` walks it backwards) |
 | `idx_transformations_created_at` | spec 2.3 §1.6 retention across users (C18) |
-
-Storage columns (`storage_status`, `stored_file_key`, `stored_file_until`) arrive with spec 2.4 (C19).
 
 ## storage_cleanup_jobs
 

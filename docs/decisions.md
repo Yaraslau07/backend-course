@@ -521,7 +521,7 @@ Other choices:
 
 After C18 merged, the author asked for every checkpoint of the session to be checked against its spec again. Each section's rules (contract steps, the §1.4 error list, §1.5 logging, §1.6 non-functional requirements) were walked against the code and tests. Result: everything the specs require is implemented and tested, except one gap and one small difference recorded below. Everything else that differs from a literal reading is an explicit author choice or a recorded decision.
 
-**Gap found (to close in C19):**
+**Gap found (closed in C19, D79):**
 - **Spec 2.2 §1.5 asks the conversion log to carry the image's final dimensions** ("input and result size, final sizes"). The `transformation` event logs byte sizes but not width × height. The image converter computes them (`ConvertedImage.width/height`), but the converter contract (D67) doesn't pass them back. Fix: an optional `width`/`height` in `ConverterOutcome`, validated in the worker and logged by the service. This is logging only; history (spec 2.3 §1.3.4) has no dimension fields.
 
 **Small difference, recorded rather than changed:**
@@ -535,3 +535,34 @@ After C18 merged, the author asked for every checkpoint of the session to be che
 - Spec 2.3: query validation follows the permission (D51 order); the cursor isn't signed (D76).
 
 **Waiting for spec 2.4 (C19), as each spec allows:** `save=true` is validated but not acted on, `X-Save-Status` isn't sent, history storage fields are fixed (`not_requested`), and the eraser and retention don't touch stored objects yet.
+
+## D79: Saving transformation results (C19, spec 2.4) (2026-11-19)
+
+**Data.** `transformations` gets `storage_status` (`not_requested` | `pending` | `available` | `error`, default `not_requested`), `stored_file_key`, `stored_file_until`, `storage_attempts` (0–5) and `storage_next_attempt_at`. `ck_transformations_storage` fixes which columns go with which status (`pending`: key and next attempt; `available`: key and until; only a successful conversion can be anything but `not_requested`). `uq_transformations_stored_file_key` makes the key unique; `idx_transformations_storage_status_until` is the index spec 2.4 §1.6 asks for. The queue is the `pending` rows, with no task table (spec 2.4 §1.3.1).
+
+**Keys.** 16 random bytes as hex (D55), also the name of the temporary copy. The key has no `.webp` suffix, so the photo orphan sweep (`StorageCleanup.sweep`, which only touches `*.webp` names) can never delete a stored result. Keep it that way. A key stays on an `error` row when a write was attempted, so retention and the eraser can still try to delete an object that may have landed unseen.
+
+**Save flow.** After a successful conversion with `save=true`, `TempArea.keep()` copies the result to `<TRANSFORMATION_TEMP_DIR>/pending/<key>` (0700 directory, 0600 files). The history row is `pending` with that key. If the copy fails, the file is still returned and the row is `error` with no key. If the history insert fails, the copy is removed. `X-Save-Status` is sent on every successful response and only then; a refused or failed conversion saves nothing.
+
+**Background write.** `TransformationStorageWorker` runs every 5 s (not in tests, and not when `STORAGE_WORKERS_ENABLED=false`), at most 20 rows per pass, claiming one `pending` row at a time with `FOR UPDATE SKIP LOCKED`. It holds the row lock through the storage call, as the photo cleanup does (D64), so the eraser and retention wait for a write in flight. A successful write sets `available` and `stored_file_until` (now + `TRANSFORMATION_STORED_FILE_RETENTION_DAYS`, default 90), and the copy is removed after the commit. If the commit is lost the next attempt writes the same key again.
+- **Repeat writes are idempotent.** `ObjectStorage.write(key, bytes, contentType?)` now treats a key that already holds this write as `stored`: S3 maps its `412` (`IfNoneMatch: *`) to `stored`, and local storage accepts an existing regular file of the same size. Nothing is ever overwritten (D53 still holds); a different-size leftover stays `unavailable`.
+- **Outage.** The port reports only `unavailable`, so a temporary and a permanent failure look alike. The row stays `pending` and is due again after 30 s × 2ⁿ; the fifth failed write makes it `error`. A missing temporary copy is `error` at once.
+
+**Expiry.** `TransformationRetention` first clears expired files (`stored_file_until` passed): it deletes the object, then sets the row to `not_requested` with the storage fields cleared; the row stays in history. The enum has no "expired" value (spec 2.4 §1.3.4), so `not_requested` is the author-adjustable choice here. Then it deletes old rows as in D77, deleting each row's object first (`not_found` counts as deleted). A row whose object cannot be deleted stays, and the sweep ends. Downloads and history check `stored_file_until > now()` themselves, so an expired file is `404` and `hasStoredFile=false` before the sweep reaches it. With the defaults a row is gone after 90 days from `created_at`, before its file (90 days from `available`) would expire.
+
+**User deletion.** `TransformationsEraser` locks a batch of the user's rows (100), deletes each stored object, then the rows, and removes any temporary copy. Unavailable storage keeps the rows and returns `retryable_failure` (`storage_unavailable`); the job retries.
+
+**Download (spec 2.4 §1.3.2–1.3.3).**
+- Own: `transformations@download`, then a lookup by item id **and the session's user**, so a foreign item is a `404` like a missing one. Admin: `download_any`, then the user (`404`), then the item among that user's. Both follow D51: a valid non-UUID id binds `null`.
+- `404` for missing, unsaved, `error` and expired; `409 file_not_ready` for `pending`; `503` when the key has no object (a `storage_mismatch` log event, never a `404`) or storage is down.
+- The response is the object stream: `Content-Type` from the target format (`csv`, `json`, `xml`, `yaml`, `png`, `jpeg`; anything else is `application/octet-stream`), `converted.<target format>`, `nosniff`, `Cache-Control: private, no-store`. No `Content-Length` is sent, so a size mismatch can never hang a client. Stream errors are replaced by a safe error as for photos.
+- No rate-limit policy is added: spec 2.4 names none (only history reads have one, D76).
+
+**History items** gain `storageStatus`, `hasStoredFile` (true only for an available, unexpired file) and `fileExpiresAt`. The key, path, bucket and attempt counters are never returned.
+
+**Logs.** `transformation_storage` events with `action` (`save`, `download`, `delete`), `userId`, `transformationId`, `size`, `result` and `durationMs`; downloads add `scope` and `actorUserId`. Never the key, the name, the content or the bucket. The conversion log also carries `saveStatus`.
+
+**Closes the D78 gap.** `ConverterOutcome` has an optional `width` and `height`; the worker keeps them only if both are positive integers, and the conversion log carries them. History has no dimension fields (spec 2.3 §1.3.4).
+
+**Limits to know** (also in `docs/known-gaps.md`): the pending copy lives on the disk of the instance that served the request, so several instances need a shared `TRANSFORMATION_TEMP_DIR` (otherwise another instance's worker finds no copy and the save becomes `error`); the worker reads a whole result into memory for the Buffer-based port.
+

@@ -3,7 +3,7 @@
 A running list of what's still outstanding. Check it before assuming something is unhandled, and update it as gaps close or new ones appear. For the overall build order, see `docs/roadmap.md`.
 
 ## Database
-- The schema covers Part 1, rate-limit counters (C5), user-list indexes (C12), the photo-reference index (C13) and the `transformations` history (C15). Its storage columns come with C19.
+- The schema covers Part 1, rate-limit counters (C5), user-list indexes (C12), the photo-reference index (C13) and the `transformations` history (C15). Its storage columns (C19, D79) are in place.
 - `POSTGRES_MIGRATIONS_RUN=false` by default, so a deploy must run `npm run migration:run` (or set the flag) itself. CI and `npm run test:e2e` migrate their own database.
 - `grants.all_actions = true` should mean "no `grant_actions` rows". That spans two tables, so the admin service never writes such rows and a snapshot reload refuses them (D45); a direct SQL change could still create one, and protected routes would then answer 503 until it is fixed.
 
@@ -29,32 +29,38 @@ A running list of what's still outstanding. Check it before assuming something i
 - The confirm route's replay lookup (one primary-key read) runs before CSRF and IP limits (D64).
 
 ## Transformations (C15)
-- **Endpoints:** text (C16) and image (C17) conversion and history (C18) are live. Saving and downloads arrive in C19.
-- The eraser deletes history rows only; stored objects join it in C19.
+- **Endpoints:** text (C16), image (C17), history (C18), saving and downloads (C19) are live.
 - A worker thread has no `resourceLimits`: a library that allocates far more than its input is bounded by its timeout and the output limit, not by a memory cap. Native allocations (sharp, resvg) aren't covered by V8 limits anyway; C17 sets the libraries' own pixel limits.
 - The timeout includes time queued behind other conversions (D67). With `TRANSFORMATION_WORKER_THREADS=2`, more than two slow conversions at once can 504 sooner than their own work would.
 - The result's name is removed as soon as it is opened (POSIX semantics, D68). A Windows host would need a different cleanup.
 - A database without a `user` role (a fresh deployment, or an un-bootstrapped dev database) reports `transformations: down`, so `/health/ready` is 503 until RBAC is bootstrapped; the seed waits for that start (D66). Liveness and the Docker `HEALTHCHECK` are unaffected.
 
 ## Text conversion (C16)
-- `save=true` is validated but not acted on yet: no copy is kept and there is no `X-Save-Status` header until spec 2.4 (C19).
 - CSV output doesn't neutralise spreadsheet formulas (a cell starting with `=`, `+`, `-` or `@`); the spec asks for faithful conversion, and the result is a download, not a rendered page.
 - Unknown XML entities (`&foo;`) are kept as literal text rather than refused; only the five predefined ones are decoded.
 - Each conversion holds its whole input and result in memory in one worker thread: at most a 10 MiB input and a 50 MiB result per conversion, times `TRANSFORMATION_WORKER_THREADS`.
 - During C16's gate, `users-read.e2e-spec.ts` (C12) failed once, right after a run in which the host stalled for several minutes. It passed in the 16 full runs that followed and couldn't be reproduced. Its timing-sensitive tests (the 2-second SQL timeout, the lock-wait check) are the likely cause.
 
 ## Image conversion (C17)
-- **The conversion log doesn't carry the image's final width × height** (spec 2.2 §1.5, "final sizes"); it logs byte sizes only. Found in the D78 audit and scheduled for C19: the converter contract needs an optional `width`/`height`.
+- The conversion log carries the image's final width × height (closed in C19, D79).
 - **Text in SVGs:** the Alpine image ships no system fonts, so resvg draws no text. Shapes, paths and gradients render; `<text>` doesn't. Installing a font package in the Dockerfile would fix it.
 - `data:` URIs inside SVGs are refused (D74), so an SVG that embeds a bitmap as a data URI can't be converted.
 - The SVG check is structural (elements, attributes, `url()`, `@import`). CSS escape tricks could in principle hide a `url()` from it; resvg never fetches anything and every external reference is refused, so this is defence in depth.
 - resvg can't be interrupted mid-render, so an expensive SVG within the pixel limit runs to completion even past the timeout. The thread is then terminated, and the client still gets 504.
-- `save=true` is validated but not acted on until spec 2.4 (C19), as for text.
 
 ## Transformation history (C18)
-- History items report `storageStatus: not_requested` until saving lands (spec 2.4, C19); retention then deletes stored objects before rows.
 - A cursor is valid until its row is deleted (retention or user deletion). After that it still continues correctly from its position: keyset paging doesn't need the row to exist.
 - Retention runs per instance; several instances may sweep at once, which is safe (each DELETE takes its own rows) but redundant.
+
+## Saved results (C19)
+- **The pending copy is local to one instance.** `save=true` copies the result to `<TRANSFORMATION_TEMP_DIR>/pending/<key>`; the worker on another instance would not find it and would mark the save `error`. Run one instance, or point every instance at a shared `TRANSFORMATION_TEMP_DIR` (D79).
+- The port reports only `unavailable`, so a temporary and a permanent storage failure look the same: five failed writes (30 s, 60 s, 2 min, 4 min between them) turn a `pending` save into `error`. A longer outage loses the save, not the conversion.
+- The worker and the retention sweep hold a row lock through a bounded storage call, like the photo cleanup (D64). Slow storage lengthens those transactions.
+- A whole result is read into memory for each write (`ObjectStorage.write` takes a Buffer): up to the direction's output limit, one at a time per worker pass.
+- A local-storage leftover under a stored key with a different size (a crash mid-write) is never overwritten, so that save ends as `error` after its attempts. S3 has no such state.
+- When a stored file expires before its row, the row goes back to `not_requested` (the enum has no "expired"); with the defaults rows are deleted first (D79).
+- Downloads have no rate limit (spec 2.4 names none).
+- An `error` row keeps its key so cleanup can still try the object; if storage stays down, the object outlives its row's retention attempt until the next sweep succeeds.
 
 ## Infrastructure
 - No CD. The course only requires a service called through an HTTP client.
