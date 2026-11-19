@@ -46,14 +46,18 @@ export class ProbeDirections implements OnModuleInit {
 
 const OPERATION: ConversionOperation = {
   type: 'file',
-  fields: ['targetFormat', 'mode', 'size'],
+  fields: ['targetFormat', 'mode', 'size', 'save'],
   maxFileBytes: 4096,
   limitFor: (extension) =>
     extension === 'probe' ? PROBE_LIMITS.inputBytes : null,
   resolve: (upload) => {
     if (upload.fields.targetFormat === undefined)
       throw new AppException('bad_request');
+    const { save } = upload.fields;
+    if (save !== undefined && save !== 'true' && save !== 'false')
+      throw new AppException('bad_request');
     return {
+      save: save === 'true',
       source: upload.file.extension,
       target: upload.fields.targetFormat,
       params: { mode: upload.fields.mode, size: upload.fields.size },

@@ -18,7 +18,12 @@ export abstract class ObjectStorage {
   abstract delete(
     key: string,
   ): Promise<'deleted' | 'not_found' | 'unavailable'>;
-  abstract write(key: string, bytes: Buffer): Promise<'stored' | 'unavailable'>;
+  /** Writing a key that already holds the same bytes is `stored` again (spec 2.4 §1.3.1). */
+  abstract write(
+    key: string,
+    bytes: Buffer,
+    contentType?: string,
+  ): Promise<'stored' | 'unavailable'>;
   abstract list(cursor?: string): Promise<StorageListing>;
 }
 export function validStorageKey(key: string): boolean {

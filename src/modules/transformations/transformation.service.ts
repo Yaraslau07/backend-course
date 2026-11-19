@@ -49,6 +49,8 @@ export interface ConversionOperation extends UploadRules {
     source: string;
     target: string;
     params: Record<string, unknown>;
+    /** `save=true` (spec 2.4 §1.3.1); a missing field is false. */
+    save?: boolean;
   };
 }
 
