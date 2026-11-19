@@ -23,7 +23,7 @@ The order the assignment is being built in, and why. Update the status column as
 | C16. Text | 3 | 2.1 | ✅ done (PR #17) |
 | C17. Images | 3 | 2.2 | ✅ done (PR #18) |
 | C18. History | 3 | 2.3 | ✅ done (PR #19) |
-| C19. Storage | 3 | 2.4 | 🔍 in review |
+| C19. Storage | 3 | 2.4 | 🔍 in review (PR #21) |
 | C20. Final audit | | all | ⏭ next (after C19 merges and the Phase 3 reviews) |
 
 Each checkpoint is one branch and one PR. The next one starts only after the previous PR is merged.
